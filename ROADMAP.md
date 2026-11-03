@@ -1,8 +1,13 @@
 # Rosetta OS PRO-E roadmap
 
-1. **v0.1**: banner/version text only, proves patch -> burn -> boot (built, not burned).
-2. **Synth mode**: new Italian-OS pages that edit LA tones on the CK-34 via standard MT-32 SysEx (model 0x16). No CK-34 change needed.
-3. **Style tool**: PC tool to read and write the style format (A4 decoded it: directory $A701, patterns in IC7 banks 1-7).
+Status 2026-11-03: v0.1 (text), v0.2 (hidden MSL-15 banks), v0.3 (songs from MIDI) and **v0.4d SYNTH EDIT** all work on hardware.
+
+1. **v0.1**: banner/version text only, proves patch -> burn -> boot. DONE.
+2. **Synth mode**: DONE as v0.4d SYNTH EDIT ([re/SYNTH_EDIT.md](re/SYNTH_EDIT.md)): Juno-style macro pages, live edits over MT-32 SysEx, tone read back with RQ1. Needs the [pin-31 mod](docs/PIN31_MOD.md) (IC7 A18 = HC11 PA6: the full 512 KB, the code runs from the upper half).
+   - Next: a couple of save slots in a submenu on the WRITE key.
+   - Then: rewrite the CK-34 (IC28) side so the voice engine fits the Juno-style controls (filter LFO, PWM, cutoff on held notes).
+   - ROM Studio has to keep lower bank 5 $A000-$B668 free for the SYNTH code twin.
+3. **Style tool**: DONE (ROM Studio + MIDI Style Maker). Next: automatic section detection.
 4. **Custom samples = Rosetta Wave port from the D-110 tool** (user: small change, same LA32/HN62304). Changes: write the wave table to IC28 $8100 (CM-32L 4-byte entries) instead of the D-110 location; IC37 = lower 512 KB, IC38 = upper; tone names in IC7 bank 0 $64D9 if waves/tones are renamed. First check: the D-110 tool's scramble unscrambles IC38 into clean samples (Munt order table).
 5. **RAM card as extra memory** (user idea 2026-11-03, RAM cards, not ROM): battery-backed and writable, so content can be loaded over MIDI without burning anything (custom styles, data, maybe code). The OS already uses RAM cards for songs/user programs and banks the card into the $4000-$BFFF window (latch $180D bit 3, values $08/$0C), and the card bus is CA0-CA19 (block diagram), so up to 1 MB of address lines. Stock TN-SC1 style cards are 32 KB ROMs with a 12-byte header (check at $D4A3/$D513). Plan: the new OS loads styles/data into a RAM card (via MIDI dump or a PC tool) and banks it in like a style ROM card. A bigger home-made SRAM card (milled PCB, Hex Wizard style) could add far more than the stock size. To find first: how the card's upper address bits (CA15+) are driven, which card sizes the OS accepts, and the card connector pinout.
 5b. **BOSS reverb DSP research (COMMITTED 2026-11-03, user will burn as often as needed).** Goal: own DSP programs (delay/chorus first, distortion only if the DSP clips/saturates), so effects can replace reverb pages. Lab pipeline: mutation builder (page + experiment -> W27C512 image, logged, minipro burn) -> fixed MIDI test signal into MIDI IN -> Scarlett capture -> automatic IR/decay/spectrum diff vs stock -> lab notebook (opcode/coefficient map). Inputs: IC13 4 x 8 KB pages + D-110 reverb ROM for diffing. User per round: swap the chip, say go. Starts after v0.1 boots. Live lo-fi/distortion in parallel: AND-gate bitcrush on the LA32->PCM54 bus + analog drive stage after the DAC, latch-bit switched (check whether that bus is parallel first).

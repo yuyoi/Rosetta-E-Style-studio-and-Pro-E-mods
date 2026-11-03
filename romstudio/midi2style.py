@@ -171,7 +171,8 @@ IRON = {
 
 ARMY = {
     'name': 'ARMYDRMS', 'card_id': 'ROSETTA02', 'tempo': 67, 'root': 11, 'ticks_per_bar': 72,   # 6/8 in B
-    'sections': {'BASIC': (2, 4), 'VARIATION': (18, 4), 'FILL>ORIG': (27, 1), 'FILL>VAR': (17, 1),
+    # loops wrap on transitions the song itself makes: BASIC 9->6 = song 5->6, VARIATION 23->20 = song 21->22
+    'sections': {'BASIC': (6, 4), 'VARIATION': (20, 4), 'FILL>ORIG': (27, 1), 'FILL>VAR': (17, 1),
                  'INTRO': (2, 2), 'ENDING': (76, 2)},
     'parts': {'DRUMS': ({9, 8}, None), 'A.BASS': ({7}, tone('ACOU BASS1')),
               'ACC1': ({3}, tone('GUITAR1')), 'ACC2': ({5}, tone('STRING SECT1')), 'ACC3': ({3}, tone('GUITAR1'))},
