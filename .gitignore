@@ -1,0 +1,23 @@
+# Roland ROM data, dumps, card images and anything built from them stay local
+*.bin
+*.rom
+*.lst
+*.readback
+*.tmp
+dumps/*
+!dumps/README.md
+!dumps/SHA1SUMS.txt
+dumps_ext/**/*
+!dumps_ext/msl15/
+!dumps_ext/msl15/README.md
+!dumps_ext/msl15/CARDS.txt
+!dumps_ext/msl15/split_cards.py
+build/
+midi_in/
+*.mid
+*.midi
+*.pdf
+*.proe.json
+re/fw_map/*.txt
+__pycache__/
+*.pyc

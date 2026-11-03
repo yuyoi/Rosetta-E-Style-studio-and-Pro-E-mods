@@ -1,0 +1,5 @@
+﻿sha1 600D50B26B8AF8C05280AF3550D71491064E6551  proe_ic4_os_v2.00_051289_27c128.bin (16384 B, 2 identical reads, T48 minipro 0.7.4 AM27C128@DIP28 -x)
+sha1 DBF467CF0ADBC3B5DBF2471B092D6CF2D07043FD  proe_ic7_R15179983_LH53234L_v2.00.bin (262144 B, 2 identical reads, T48 AM27C020@DIP32 -x)
+sha1 E1C03905C46E962D1DEB15EEED92EB61B42BBA4A  ck34_ic13_reverb_R15179917_HN623257.bin (32768 B, 2 identical reads, AM27C256@DIP28 -x; == MAME r15179917 crc 236c87a6)
+sha1 3AD889FDE5DB5B6437CBC2EB6E305312FEC3DF93  ck34_ic38_wave_R15179945_HN62304.bin (524288 B, 3 identical reads after reseat, AM27C040@DIP32 -x; == MAME cm32l r15179945 crc 8e9ea06e)
+sha1 D80449D4E241B5A5665C31A39D839D17592B411F  ck34_ic28_control_R15179974_CK-34_v2.06.bin (65536 B = whole chip content. W27C512 -x: bare read == pin 22 held high (pin 22 makes no difference: the chip mirrors its 64 KB or pin 22 is unused); pin 20 high = outputs off, so pin 20 = enable. 2+2 identical reads)
