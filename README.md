@@ -1,11 +1,15 @@
-# Rosetta E-Style Studio  +  PRO-E mods  (WIP)
+# Roland PRO-E mods: Rosetta OS custom firmware with Juno mode, new effects and styles from MIDI
+
+**Rosetta E-Style Studio + PRO-E mods** (WIP) · for the Roland **PRO-E** (Pro-E / Pro E / ProE) Intelligent Arranger and the
+E-series arrangers · [project page](https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/)
 
 <!-- art: docs/mascot/ (JSW is drawing the ad) -->
 <p align="center"><a href="https://discord.gg/R3CQkFdRtf"><img src="https://img.shields.io/badge/Roland%20Modding-join%20the%20Discord-5865F2?logo=discord&logoColor=white" alt="Join the Roland Modding Discord"></a></p>
 
-Pull the **Roland E-series arrangers** into this century: new **music styles from any MIDI file**, the **hidden
-styles** nobody could select, and a custom OS for the **PRO-E Intelligent Arranger** (1989, made in Italy).
-Build it all in one app and burn it straight to a T48 programmer.
+Pull the **Roland E-series arrangers** into this century: a **Juno mode** for the PRO-E's LA synth engine, a **Juno
+chorus, delay, lo-fi and drive** on its own reverb chip, new **music styles from any MIDI file**, the **hidden styles**
+nobody could select, and a custom OS for the **PRO-E Intelligent Arranger** (1989, made in Italy, with an MT-32 /
+CM-32L voice board inside). Build it in one app and burn it straight to a T48 programmer.
 
 > **Made by JunkSmithWizard (JSW) together with Claude (Anthropic's AI).** Claude wrote the code and did the
 > reverse engineering (both CPUs, the style and card formats, the wave/loop tables). JSW did all the hardware on
@@ -25,9 +29,13 @@ Build it all in one app and burn it straight to a T48 programmer.
 | **Hidden MSL-15 banks** | 8 styles that were in the MSL-15 ROM but had no button: KRONCONG, LANGGAM ASLI, DANGDUT, JOGET (Asia) and DÜYEK, ANADOLU, 9/8, 5/8 (Turkey). Now on BANK 3 |
 | **Any TN-SC1 card style → an internal slot** | pick from all 16 MSL-15 cards (~68 styles), byte-checked against the original card data |
 | **OS text** | your own boot banner and version screen |
-| **SYNTH EDIT** | press CURSOR: tone editing on her own panel, Juno-style pages (PCM wave, osc, pitch, filter, one ADSR, amp, LFO, live filter), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
+| **SYNTH EDIT** | press CURSOR: tone editing on her own panel, 19 pages (Juno, filter, envelope, pitch env, LFO, voice, waves, live filter, effects…), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
+| **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel |
+| **Live filter** | cutoff and resonance changes reach notes you're holding (IC28 build), so filter sweeps work like a real knob |
+| **ROSETTA FX** | new programs for her Boss reverb chip (IC13): a moving **Juno chorus** (128 positions, no clicks), **delay** 40-495 ms with feedback, **lo-fi** bit crush, **drive**, **flanger**, plus Roland's plate. Per-part routing keeps the drums dry. [re/REVERB_CHIP.md](re/REVERB_CHIP.md) |
+| **MIDI remote** | `tools/proe_link.py`: press her keys, turn the dial and read her screen from a PC, and record her through an audio interface. Every effect above was measured on her this way |
 | **Pin-31 mod** | one wire through a sacrificial socket: the CPU switches IC7's two halves, so the full 512 KB of a W27C040 is usable. [docs/PIN31_MOD.md](docs/PIN31_MOD.md) |
-| **Build + burn** | W27C040 (IC7) and W27C512 (IC4) images: ID check, write, verify, readback. Drop-in, no board mods (except SYNTH EDIT) |
+| **Build + burn** | W27C040 (IC7), W27C512 (IC4, IC28, IC13) images: ID check, write, verify, readback. Drop-in, no board mods (except SYNTH EDIT) |
 
 Every build checks itself before it writes anything: every kept style must decode to exactly its stock events,
 every imported style must match its source pattern by pattern, and all IC7 bank checksums must add up.
@@ -80,6 +88,8 @@ recolour it: the arranger bends single notes to fit the chord.
 - The two talk **plain MIDI + MT-32 SysEx** at 31,250 baud. The CK-34 accepts standard MT-32 tone editing.
 - Both brains carry credits: the Italian OS has the dev team **DEMETRIO LUIGI PAOLO PIERO ROBY**, and the CK-34 says *by S.Ishida*.
 - Tools: `re/hc11asm.py` (68HC11 assembler, rebuilds the whole stock OS byte for byte) and `re/hc11sim.py` (simulator for testing patches before a burn).
+  For the voice board: `ref_tools/mcs96_asm.py` / `mcs96_sim.py` / `mcs96_dis.py` (8096 assembler, simulator, disassembler)
+  and `re/boss_reverb.py` (the Boss reverb chip, corrected against measurements on her).
 - Full notes: [docs/HARDWARE_NOTES.md](docs/HARDWARE_NOTES.md), [docs/PIN31_MOD.md](docs/PIN31_MOD.md), [re/FIRMWARE_NOTES.md](re/FIRMWARE_NOTES.md),
   [re/WAVE_FORMAT.md](re/WAVE_FORMAT.md), [re/MULTI_OUTS.md](re/MULTI_OUTS.md), and the deep dives in [re/fw_map/](re/fw_map/README.md)
   (written by an analysis run that was stopped before its checkers finished: treat them as unverified).
@@ -90,10 +100,11 @@ Planned, roughly in order ([ROADMAP.md](ROADMAP.md)):
 - **Style Maker in the app:** drop a MIDI file, it finds the most-repeated loop (BASIC), the second one (VARIATION), the fills,
   intro and ending by itself, and you just check its picks.
 - **TN-SC1 card adapter:** burn song styles onto a card for any E-series.
-- **SYNTH EDIT save slots** on the WRITE key, then a **CK-34 firmware rewrite** so the voice engine fits the Juno-style controls.
-- **Rosetta Wave:** custom samples in IC37/IC38 plus the wave/loop table in IC28.
+- **LFO block in IC28:** Juno-style PWM, LFO → filter and delayed vibrato (the "breathing" a Juno has).
+- **D-50 flavour:** the PRO-E has the D-50's LA chip. D-50 style LFOs, chorus + reverb and the famous D-50 patches as presets.
+- **SYNTH EDIT save slots** on the WRITE key.
+- **Rosetta Wave:** custom samples in IC37/IC38 plus the wave/loop table in IC28 (long-sample bank built, being tested).
 - **Extra outputs:** the CK-34's 4051 demux has slots the board never uses (the MT-32 schematic shows SYN1/SYN2/REV split, two channels free).
-- A reverb lab for the BOSS DSP; lo-fi and drive hardware.
 
 ## Legal
 
@@ -101,4 +112,5 @@ This repo contains no Roland ROM data, no dumps, no card images and no song MIDI
 so you can check your own dumps. Roland, PRO-E, MT-32, CM-32L and MSL-15 are names of Roland Corporation, used here only
 to say what this works with. The MIDI-to-style converter only converts files you supply.
 
-MIT licence. Ideas, bug reports and test results from other E-series owners are very welcome: open an issue or come to the Discord.
+MIT licence, except `re/boss_reverb.py`: a port of Sergey V. Mikayev's MT-32 reverb interpreter, so it stays LGPL-2.1+.
+Ideas, bug reports and test results from other E-series owners are very welcome: open an issue or come to the Discord.

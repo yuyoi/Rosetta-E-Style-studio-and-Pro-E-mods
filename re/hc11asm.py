@@ -229,6 +229,8 @@ def _pass(lines, syms, strict):
         where = f'line {n}: {s}'
         m = re.match(r'^([A-Za-z_.][A-Za-z0-9_.]*):\s*(.*)$', s)
         if m:
+            if m.group(1) in labels:
+                raise AsmError(f'{where}: label {m.group(1)} defined twice')
             syms[m.group(1)] = labels[m.group(1)] = pc
             s = m.group(2).strip()
             if not s:

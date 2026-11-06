@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roland PRO-E Mods: Rosetta OS with Juno mode, Juno chorus and styles from MIDI</title>
+<meta name="description" content="Roland PRO-E (Pro-E, Pro E) mods by Rosetta: custom firmware with a Juno mode for the LA synth engine, a moving Juno chorus, delay, lo-fi and drive on its reverb chip, SYNTH EDIT on the panel and new arranger styles from any MIDI file. Tested on a real PRO-E, free and open source.">
+<meta name="keywords" content="Roland PRO-E, Pro-E, Pro E, PRO-E mod, PRO-E firmware, Roland arranger mod, E-series, Juno chorus, LA synthesis, LA32, MT-32, CM-32L, custom firmware, synth mod">
+<link rel="canonical" href="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Roland PRO-E Mods: Rosetta OS, Juno mode + new effects">
+<meta property="og:description" content="Custom firmware for the Roland PRO-E arranger: Juno mode, a Juno chorus on its reverb chip, delay, lo-fi, drive, SYNTH EDIT and styles from MIDI. Tested on real hardware.">
+<meta property="og:url" content="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/">
+<meta property="og:image" content="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/img/screenshot.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Rosetta OS PRO-E","applicationCategory":"MultimediaApplication","operatingSystem":"Roland PRO-E Intelligent Arranger, Windows/Python for the tools","description":"Custom firmware for the Roland PRO-E arranger: Juno mode, new effects on its reverb chip (Juno chorus, delay, lo-fi, drive, flanger), SYNTH EDIT on the panel and new styles from MIDI files.","url":"https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+</script>
+<style>
+:root{--bg:#f6f6f3;--paper:#fff;--fg:#17181a;--muted:#5c5f63;--rule:#d6d7d2;--bar:#17181a;--bar-fg:#f6f6f3;--accent:#d2461e;--lcd:#b9c94a;--lcd-ink:#28300e}
+@media (prefers-color-scheme:dark){:root{--bg:#121314;--paper:#1b1c1e;--fg:#ececea;--muted:#a3a6aa;--rule:#2e3033;--bar:#ececea;--bar-fg:#121314}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 "Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:920px;margin:0 auto;padding:0 16px}
+header{padding:40px 0 24px;text-align:center}
+header img.hero{width:220px;height:220px;image-rendering:pixelated}
+h1{font-size:2rem;line-height:1.2;margin:16px 0 8px}
+.lede{color:var(--muted);font-size:1.1rem;margin:0 auto;max-width:640px}
+.lcd{display:inline-block;margin:20px 0 0;background:var(--lcd);color:var(--lcd-ink);font:600 1.1rem/1.3 "Courier New",monospace;padding:10px 16px;border-radius:4px;letter-spacing:.06em;white-space:pre}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:24px 0 8px}
+.btn{display:inline-block;padding:12px 18px;border-radius:6px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700}
+.btn.alt{background:transparent;color:var(--fg);border:2px solid var(--fg)}
+h2{background:var(--bar);color:var(--bar-fg);font-size:1rem;letter-spacing:.08em;text-transform:uppercase;padding:8px 12px;margin:40px 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.card{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:14px 16px}
+.card b{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:.95rem}
+figure{margin:16px 0;text-align:center}
+figure img{max-width:100%;border:1px solid var(--rule);border-radius:4px}
+figcaption{color:var(--muted);font-size:.9rem;margin-top:6px}
+ol li{margin:6px 0}
+footer{color:var(--muted);font-size:.9rem;padding:40px 0;border-top:1px solid var(--rule);margin-top:40px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<img class="hero" src="img/hexgirl_icon.png" alt="Rosetta: Hex Girl badge">
+<h1>Roland PRO-E Mods: Rosetta OS with Juno mode and new effects</h1>
+<p class="lede">Custom firmware for the Roland PRO-E (Pro-E) Intelligent Arranger, the 1989 Italian arranger with an MT-32 voice board inside. A Juno mode, a moving Juno chorus on its reverb chip, and new styles from your MIDI files. Free, open source, tested on a real PRO-E.</p>
+<div class="lcd"> OS v0.7 JUNO FX </div>
+<div class="cta">
+<a class="btn" href="https://github.com/yuyoi/Rosetta-E-Style-studio-and-Pro-E-mods">Rosetta PRO-E on GitHub</a>
+<a class="btn alt" href="https://discord.gg/R3CQkFdRtf">Join the Discord</a>
+</div>
+</header>
+
+<h2>What the mod adds</h2>
+<div class="grid">
+<div class="card"><b>Juno mode</b><span>MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw, then SAW / PULSE / SUB levels, pulse width, detune and range, like a Juno panel.</span></div>
+<div class="card"><b>Juno chorus</b><span>A moving stereo chorus built on the PRO-E's own Boss reverb chip. 128 positions in a click-free order, Chorus I and II speeds.</span></div>
+<div class="card"><b>Delay, lo-fi, drive, flanger</b><span>New programs for the same chip: delay 40-495 ms with feedback, bit-crush lo-fi with a tone control, drive, flanger, plus Roland's plate.</span></div>
+<div class="card"><b>Per-part effects</b><span>Choose which parts go into the effect: keep the drums dry and put the synth through the chorus.</span></div>
+<div class="card"><b>SYNTH EDIT on the panel</b><span>19 pages of tone editing on her own buttons and dial: filter, envelope, pitch envelope, LFO, waves, structures and the effects. You hear each change as you turn.</span></div>
+<div class="card"><b>Live filter</b><span>Cutoff and resonance reach the notes you're holding, so filter sweeps work like a real knob.</span></div>
+<div class="card"><b>Styles from MIDI</b><span>Turn a MIDI file into an arranger style with its own intro, fills and ending. It follows your left-hand chords.</span></div>
+<div class="card"><b>Hidden styles</b><span>8 styles that sat in the MSL-15 ROM with no button, now on BANK 3. Any TN-SC1 card style can go into an internal slot.</span></div>
+</div>
+<p>Every feature above is confirmed on hardware. The effects were measured on a real PRO-E through an audio interface.</p>
+
+<figure><img src="img/screenshot.png" alt="Rosetta E-Style Studio, styled after the PRO-E front panel" loading="lazy"><figcaption>Rosetta E-Style Studio: pick styles, set the OS text, build and burn to a T48.</figcaption></figure>
+
+<h2>How it works</h2>
+<ol>
+<li>Read your own chips on a programmer such as a T48 (IC7 style ROM, IC4 OS, and for the synth side IC28 and IC13 on the voice board). Keep the originals.</li>
+<li>Run the build tools. They patch your dumps and check every change before writing the burn files.</li>
+<li>Burn W27C040 / W27C512 chips and fit them, notch the right way. Put the originals back and she's a stock PRO-E again.</li>
+</ol>
+<p><b>Styles and OS text</b> need only IC7 and IC4, no board mods. <b>SYNTH EDIT and Juno mode</b> need the one-wire pin-31 mod. <b>The new effects</b> need IC13 and IC28 on the voice board.</p>
+
+<h2>Why it sounds like this</h2>
+<p>The PRO-E's voice board is Roland MT-32 / CM-32L hardware: the same LA synth chip as the D-50, and a Boss reverb DSP. LA tones were always "a sampled attack over a plain synth body". Juno mode gives that body what the chip could always do but no front panel offered. The chorus works by having the voice CPU step the reverb chip through 128 delay positions, in an order where each step changes one control byte only.</p>
+
+<h2>Community</h2>
+<p>Questions, hardware reports and ideas: <a href="https://discord.gg/R3CQkFdRtf">join the Discord</a>. More Rosetta mods: <a href="https://yuyoi.github.io/D110-rosetta-OS-v11/">D-110</a>, <a href="https://github.com/yuyoi/Sp-808-rosetta-looper-OS-">SP-808</a>, <a href="https://github.com/yuyoi/Akai-S2000-Rosetta-OS">Akai S2000</a>, <a href="https://github.com/yuyoi/super-Gp-16-Rosetta-OS">GP-16</a>, <a href="https://github.com/yuyoi/u110-romhex-studio">U-110</a>.</p>
+
+<footer>Made by JunkSmithWizard (JSW) together with Claude (Anthropic's AI). No Roland code or ROM data is included: the tools patch your own dumps. Roland, PRO-E, MT-32, CM-32L, D-50 and Juno are names of Roland Corporation, used only to say what this works with. MIT licence (boss_reverb.py: LGPL-2.1+).</footer>
+</div>
+</body>
+</html>
