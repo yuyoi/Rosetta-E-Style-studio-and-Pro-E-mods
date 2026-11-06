@@ -129,11 +129,12 @@ for i in range(4000):
     modes.add(6 + ((s.m[0x0800] >> 2) & 1))
     if i and l0[0] != s.m[0x0400] and l0[1] != s.m[0x0800]:
         both += 1
-check(min(ps[200:]) == 32 and max(ps[200:]) == 95, 'chorus B depth: LEVEL 4 sweeps 32-95 of 128 (%d-%d)' % (min(ps[200:]), max(ps[200:])))
-check(len(set(ps[200:])) == 64, 'chorus B: 64 distinct positions in the sweep = twice chorus A (%d)' % len(set(ps[200:])))
+B_LO, B_HI = 64 - LAB.SPAN2[4] // 2, 64 - LAB.SPAN2[4] // 2 + LAB.SPAN2[4] - 1   # p = base + span * tri >> 16
+check(min(ps[200:]) == B_LO and max(ps[200:]) == B_HI, 'chorus B depth: LEVEL 4 sweeps %d-%d of 128 = the full Juno range (%d-%d)' % (B_LO, B_HI, min(ps[200:]), max(ps[200:])))
+check(len(set(ps[200:])) == LAB.SPAN2[4], 'chorus B: every 1/4-frame position in the sweep is used (%d)' % len(set(ps[200:])))
 check(both == 0, 'chorus B: one latch per step, also across the mode 6/7 row (%d)' % both)
 check(modes == {6, 7}, 'chorus B moves between modes 6 and 7: %r' % modes)
-tops = [i for i in range(1, len(ps) - 1) if ps[i] == 95 and ps[i - 1] < 95]
+tops = [i for i in range(1, len(ps) - 1) if ps[i] == B_HI and ps[i - 1] < B_HI]
 period = (tops[-1] - tops[0]) / (len(tops) - 1) if len(tops) > 1 else 0
 check(abs(period - 1000 / 0.51) < 40, 'chorus B rate: TIME 2 = 0.51 Hz (period %.0f ms)' % period)
 check(s.m[0x0400] & 0xF0 == 0x10 and s.m[0x0800] & 0xF8 == 0x00, 'chorus B keeps the other latch bits (%02X %02X)' % (s.m[0x0400], s.m[0x0800]))
@@ -163,7 +164,7 @@ for i in range(4000):
     if i and l0[0] != s.m[0x0400] and l0[1] != s.m[0x0800]:
         both += 1
 check(s.m[0xC8] & 0x0E == 0x06 and s.m[0x021A] & 0x0E == 0x06, 'mode 1 -> IC13 modes 6/7: mode bits 1-3 = 3 (rc8 %02X, latch %02X)' % (s.m[0xC8], s.m[0x021A]))
-check(min(ps[200:]) == 32 and max(ps[200:]) == 95 and len(set(ps[200:])) == 64, 'mode 1 sweeps chorus B 32-95 of 128 (%d-%d)' % (min(ps[200:]), max(ps[200:])))
+check(min(ps[200:]) == B_LO and max(ps[200:]) == B_HI, 'mode 1 sweeps chorus B %d-%d of 128 (%d-%d)' % (B_LO, B_HI, min(ps[200:]), max(ps[200:])))
 check(both == 0 and modes == {6, 7}, 'mode 1 chorus B: one latch per step, rows across modes 6/7 (%d, %r)' % (both, modes))
 s.m[0xC8] = (s.m[0xC8] & 0xF1)                         # the stock code rewrites mode 1 (e.g. a reverb SysEx)
 for i in range(300):

@@ -34,7 +34,7 @@ CHORUS_B = 6                                                # v3: modes 6 + 7 = 
 CHORUS_MODE, FLANGER_MODE = 1, 4
 RATES_HZ = [0.25, 0.4, 0.51, 0.7, 0.86, 1.5, 3.0, 6.0]      # TIME 0-7 (2 = Juno Chorus I, 4 = Chorus II)
 SPAN = [0, 8, 16, 24, 32, 44, 54, 62]                       # LEVEL 0-7, in chorus positions (1-63)
-SPAN2 = [2 * s for s in SPAN]                               # chorus B: the same depth over 128 positions
+SPAN2 = [0, 24, 48, 80, 124, 124, 124, 124]                # chorus B: LEVEL 4-7 = the full Juno sweep (1.7-5.3 ms, 0.513 / 0.863 Hz). v4 had half
 
 
 def rate_word(f):

@@ -281,20 +281,55 @@ def delay128(q):
     return round(53 + 118 * q / 127)
 
 
-def chorus_block_b(m0):
+POLE_HALF = ({1: ALL}, {1: ALL})                 # z = z/2 + x/2      (-3 dB ~3.7 kHz)
+POLE_QUARTER = ({2: ALL}, {1: ALL, 2: ALL})      # z = 3/4 z + x/4    (-3 dB ~1.5 kHz)
+CH_POST = [POLE_HALF, POLE_HALF]                # v5.2: 2 poles AFTER the taps: ticks -7 dB (emulator, mid-frame switches), wet -1..-4.5 dB at 2-3 kHz; [] = v5.1
+CH_POST_SCR = {'R': 0x0800, 'L': 0x0C00}         # tap scratch; pole n state at Z + 0x100 n (read back at -1)
+CH_POST_Z = {'R': 0x1000, 'L': 0x1400}
+
+
+def pole_chain(p, i, ch, poles):
+    '''value in acc (last add before step i) -> poles in series, adds only: z = keep z[n-1] + in x. The result
+    is in acc at the end and written to the last state; returns the step of that write.
+    Measured 2026-11-06 on her: the chorus fizz = a tick at every position step (frozen = as clean as dry at
+    velocity 127, no clipping), so the filter goes after the taps, where the jump happens.'''
+    scr = CH_POST_SCR[ch]
+    for n, (ain, akeep) in enumerate(poles):
+        zw = CH_POST_Z[ch] + 0x100 * n
+        p.wracc(i, scr, load=True)                      # park the input (tap, or the last pole's z) + load it
+        p.mac(i, ain, clear=True)
+        st, hh = p.half(i, max(ain))
+        j = st if hh == 0 else st + 1                   # a load here only reaches h1
+        p.read(j, zw - 1); p.mac(j, akeep)
+        st, hh = p.half(j, max(akeep))
+        i, scr = st + 1, zw
+    p.wracc(i, scr)
+    return i
+
+
+def chorus_block_b(m0, post=None):
     '''JUNO CHORUS v5 B (modes 6 + 7 = 128 positions, IC28 v3 stepper: mode bit 0 = the 3rd row bit in 0x0800):
     half-size tap steps (0.93 frames). Combination c = m0 * 64 + level * 8 + time, position = snake(c).
-    v4 low-pass line at x/2, one tap per position (v1 layout). Mode 6, time 0 + level 0 = OFF: silent.'''
+    v4 low-pass line at x/2, one tap per position (v1 layout). Mode 6, time 0 + level 0 = OFF: silent.
+    v5.2 (post): L taps 12-15 + poles, parked, read back at 48 (latched 56); R taps 34-37 + poles (latched 47).'''
+    post = CH_POST if post is None else post
     progs = []
     for k in range(16):
         p = Prog()
         chorus_line(p, CH_IN2)          # v5.1: line = x -> wet = dry level, the Juno mix (was x/2, too dry)
+        tl, tr = (12, 34) if post else (48, 40)
         for s in range(4):
             c = m0 * 64 + k * 4 + s
             q = GC.snake(c)
             on = (1 << s) if c else 0
-            p.read(40 + s, 0x4000 - delay128(q)); p.mac(40 + s, {0: on}, clear=(s == 0))         # out R (47)
-            p.read(48 + s, 0x4000 - delay128(127 - q)); p.mac(48 + s, {0: on}, clear=(s == 0))   # out L (56)
+            p.read(tr + s, 0x4000 - delay128(q)); p.mac(tr + s, {0: on}, clear=(s == 0))         # out R (47)
+            p.read(tl + s, 0x4000 - delay128(127 - q)); p.mac(tl + s, {0: on}, clear=(s == 0))   # out L (56)
+        if post:
+            w = pole_chain(p, 16, 'L', post)
+            assert w < 32
+            p.read(48, CH_POST_Z['L'] + 0x100 * (len(post) - 1)); p.mac(48, {0: ALL}, clear=True)
+            w = pole_chain(p, 38, 'R', post)
+            assert w <= 46, w
         progs.append(p.bytes())
     return b''.join(progs)
 

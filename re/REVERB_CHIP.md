@@ -38,7 +38,7 @@ z = (1 − a)·z + a·x (`gen_fx.tone_pole`). Other measured facts:
 | 3 | LO-FI: tone filter + bit crush (+ drive into the clamp) | 16 crush steps, TONE open … dull |
 | 4 | FLANGER: comb 0.25-4 ms, feedback 0.75 | moved by IC28 |
 | 5 | DRIVE: tone filter + gain into the clamp, back down to about the dry level | 16 gain steps |
-| 6 + 7 | **JUNO CHORUS B**: 2-pole low-pass line, 128 positions (1.7-5.3 ms), L and R sweep opposite | moved by IC28 |
+| 6 + 7 | **JUNO CHORUS B**: 2-pole low-pass line, 128 positions (1.7-5.3 ms), L and R sweep opposite, 2-pole smoothing after the taps | moved by IC28 |
 
 Time 0 + level 0 (REVERB OFF) is silent in every mode. IC13 is a 27C256-pinout socket; burn a W27C512 with the 32 KB
 image twice (`IC13_fx_W27C512.bin`), so the extra address pin doesn't matter.
@@ -52,6 +52,12 @@ image twice (`IC13_fx_W27C512.bin`), so the extra address pin doesn't matter.
 - **128 positions:** chorus B uses mode bit 0 as a third row bit (the same latch byte), so its steps are half the
   size of the 64-position chorus: 5.4 dB less zipper on her (5.6 dB in the emulator). The panel's JUNO CHORUS
   (mode 1) plays chorus B; leaving the chorus gives the stock settings back.
+- **Full Juno depth:** the panel's Juno I and II (LEVEL 4-7) sweep the whole Juno-60 range, 1.7-5.3 ms, at
+  0.513 / 0.863 Hz (Juno-60 figures from pendragon-andyh's Juno60 analysis).
+- **Fizz = ticks, not clipping (measured):** same notes at velocity 30-127, chorus frozen vs moving. Frozen is as
+  clean as dry even at 127; moving makes a short tick at each position step, a fixed share of the signal, so it
+  shows when you play loud. Two gentle low-pass poles *after* the taps (`gen_fx.pole_chain`) smooth each step:
+  a loud chord went from 42 ticks to none. Loud high single notes still tick a little (next: 256 positions).
 - Also in this build: reverb mode clamp 3 → 7 (all 8 slots), part reverb switch clamp 1 → 7, and the live filter
   (cutoff/resonance changes reach held notes). `test_ck34_lab.py` (34 checks) and `test_ck34_live.py` run it in an
   8096 simulator.
