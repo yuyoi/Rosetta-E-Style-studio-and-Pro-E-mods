@@ -21,6 +21,9 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 
 *Styled after the PRO-E's front panel: the 4 × 8 MUSIC STYLE buttons, green backlit LCD, style library on the right.*
 
+🎧 **Listen:** [JSW jamming the PRO-E: Juno chorus + resonant DSP filter](docs/audio/roland-pro-e-rosetta-os-juno-chorus-resonant-filter-jam.mp3)
+(2 min 35 s, recorded straight from her outputs on the current dev build; the filter and bender firmware comes to this repo next).
+
 ## What works (tested on a real PRO-E)
 
 | | |
