@@ -152,9 +152,18 @@ s.m[0x0400], s.m[0x0800] = 0x10, 0x04
 for i in range(50):
     tick(s)
 check(s.m[0x0400] == 0x10 and s.m[0x0800] == 0x04, 'chorus B OFF: latches untouched')
-# ---- IC28 v4: the panel's JUNO CHORUS (mode 1) plays chorus B
-s = rig(1, 2, 4)
-s.m[0xC8] = 0x00                                       # rc8 as sub_4CFC leaves it for mode 1 (bits 1-3 = 0)
+# ---- IC28 v6 (IC13 v7 SUPER FX): mode 1 = HALL, static; the panel's Juno types send mode 6 itself
+s = rig(1, 5, 5)
+s.m[0xC8] = 0x00
+tick(s)                                                # first pass: the stock latches handed back once
+l1 = (s.m[0x0400], s.m[0x0800], s.m[0xC8])
+for i in range(2000):
+    tick(s)
+check((s.m[0x0400], s.m[0x0800], s.m[0xC8]) == l1 and s.m[LAB.CH_POS] == 0xFF and l1[2] & 0x0E == 0 and l1[1] & 0x04,
+      'mode 1 HALL: stock latches (mode 1), then the stepper never touches them (%02X %02X %02X)' % l1)
+# mode 6 (the panel's JUNO I) from a stock state: chorus B, and it survives a stock rewrite of the mode bits
+s = rig(6, 2, 4)
+s.m[0xC8] = 0x06                                       # rc8 as sub_4CFC leaves it for mode 6 (bits 1-3 = 3)
 ps, both, modes = [], 0, set()
 for i in range(4000):
     l0 = (s.m[0x0400], s.m[0x0800])
@@ -163,10 +172,10 @@ for i in range(4000):
     modes.add(6 + ((s.m[0x0800] >> 2) & 1))
     if i and l0[0] != s.m[0x0400] and l0[1] != s.m[0x0800]:
         both += 1
-check(s.m[0xC8] & 0x0E == 0x06 and s.m[0x021A] & 0x0E == 0x06, 'mode 1 -> IC13 modes 6/7: mode bits 1-3 = 3 (rc8 %02X, latch %02X)' % (s.m[0xC8], s.m[0x021A]))
-check(min(ps[200:]) == B_LO and max(ps[200:]) == B_HI, 'mode 1 sweeps chorus B %d-%d of 128 (%d-%d)' % (B_LO, B_HI, min(ps[200:]), max(ps[200:])))
-check(both == 0 and modes == {6, 7}, 'mode 1 chorus B: one latch per step, rows across modes 6/7 (%d, %r)' % (both, modes))
-s.m[0xC8] = (s.m[0xC8] & 0xF1)                         # the stock code rewrites mode 1 (e.g. a reverb SysEx)
+check(s.m[0xC8] & 0x0E == 0x06, 'mode 6: mode bits 1-3 = 3 (rc8 %02X)' % s.m[0xC8])
+check(min(ps[200:]) == B_LO and max(ps[200:]) == B_HI, 'mode 6 sweeps chorus B %d-%d of 128 (%d-%d)' % (B_LO, B_HI, min(ps[200:]), max(ps[200:])))
+check(both == 0 and modes == {6, 7}, 'mode 6 chorus B: one latch per step, rows across modes 6/7 (%d, %r)' % (both, modes))
+s.m[0xC8] = (s.m[0xC8] & 0xF1)                         # a stock rewrite with the wrong mode bits
 for i in range(300):
     tick(s)
 check(s.m[0xC8] & 0x0E == 0x06, 'mode bits re-asserted after a stock rewrite')
@@ -174,9 +183,91 @@ s.m[0xED95], s.m[0xED96], s.m[0xED97] = 2, 5, 3        # leave for DELAY
 tick(s)
 check(s.m[0xC8] & 0x0E == 0x02 and s.m[0x021A] & 0x0E == 0x02 and s.m[0x0800] & 0x04 == 0,
       'leaving: stock mode 2 back in rc8 / 0x021A / 0x0800 bit 2 (%02X %02X %02X)' % (s.m[0xC8], s.m[0x021A], s.m[0x0800]))
-s = rig(1, 0, 0)
+# mode 5 JUNO + REVERB: the 64-position path, mode bits untouched
+s = rig(5, 2, 7)
+s.m[0xC8] = 0x04                                       # mode 5: bits 1-3 = 2
+ps, both = [], 0
+for i in range(4000):
+    l0 = (s.m[0x0400], s.m[0x0800])
+    tick(s)
+    ps.append(pos_of(s))
+    if i and l0[0] != s.m[0x0400] and l0[1] != s.m[0x0800]:
+        both += 1
+lo, hi = 32 - LAB.SPAN[7] // 2, 32 - LAB.SPAN[7] // 2 + LAB.SPAN[7] - 1
+check(min(ps[200:]) == lo and max(ps[200:]) == hi, 'mode 5 sweeps %d-%d of 64 (%d-%d)' % (lo, hi, min(ps[200:]), max(ps[200:])))
+check(both == 0 and s.m[0xC8] & 0x0E == 0x04 and s.m[0x0800] & 0x04 == s.m[0xF4A2] & 0x04,
+      'mode 5: one latch per step, mode bits 1-3 + mode bit 0 left alone (%d, rc8 %02X)' % (both, s.m[0xC8]))
+s = rig(5, 0, 0)
 s.m[0x0400], s.m[0x0800] = 0x10, 0x04
 for i in range(50):
     tick(s)
-check(s.m[0x0400] == 0x10 and s.m[0x0800] == 0x04 and s.m[0xC8] & 0x0E == 0, 'mode 1 OFF: hands off (IC13 mode 1 OFF = silent)')
+check(s.m[0x0400] == 0x10 and s.m[0x0800] == 0x04, 'mode 5 OFF: latches untouched')
+# ---- v7: REVERB OFF (time 0 + level 0) routes every new note dry (entry 0), for the dry-B mod ----
+for site in LAB.ROUTE_READS:
+    rel = int.from_bytes(rom[site + 1:site + 3], 'little')
+    check(rom[site] == 0xEF and (site + 3 + rel) & 0xFFFF == LAB.DRYOFF and rom[site + 3:site + 5] == bytes([0xFD, 0xFD]),
+          'routing read at %04X -> lcall DRYOFF' % site)
+for sw in range(8):
+    for t, l, name in ((0, 0, 'OFF'), (0, 3, 'level 3'), (2, 0, 'time 2'), (5, 5, 'on')):
+        s = Sim(rom)
+        s.m[0xED96], s.m[0xED97] = t, l
+        s.m[0x70] = sw
+        s.call(LAB.DRYOFF)
+        want = rom[LAB.ROUTE + (0 if (t, l) == (0, 0) else sw)]
+        check(s.m[0x74] == want, 'DRYOFF switch %d, %s -> %02X (got %02X)' % (sw, name, want, s.m[0x74]))
+# ---- v8: REAL PWM (PWMLFO at the end of the live-filter hook) ----
+import build_ck34_live as LIVEB
+_, lcode, _ = LIVEB.build()
+ret = LIVEB.LIVECUT + len(lcode) - 1
+check(rom[ret] == 0xE7 and (ret + 3 + int.from_bytes(rom[ret + 1:ret + 3], 'little')) & 0xFFFF == LAB.PWMLFO,
+      'LIVECUT ends in ljmp PWMLFO (was ret)')
+PB = 0xE300                                            # a partial's params (timbre temp)
+
+
+def pw_rig(pcm_byte=0x73, wave=0, pw=0, rate=50, pcm_partial=False):
+    s = Sim(rom)
+    s.m[0x40], s.m[0x41] = 4, 0                        # r40 = 2p (partial 2)
+    s.m[0x56], s.m[0x57] = PB & 0xFF, PB >> 8          # r56 = its params
+    s.m[0x76], s.m[0x77] = 0x5A, 0xA5                  # the caller's r76/r77
+    s.m[0xEF80 + 4] = 0x80 if pcm_partial else 0x00
+    s.m[PB + 4], s.m[PB + 5], s.m[PB + 6], s.m[PB + 0x14] = wave, pcm_byte, pw, rate
+    s.m[0x0C40 + 4] = 0x11                             # marker: untouched?
+    s.t = 0
+    return s
+
+
+def pw_run(s, ticks=4000, dt=250):                    # 250 x 2 us = 0.5 ms per visit, 2 s
+    out = []
+    for _ in range(ticks):
+        s.t = (s.t + dt) & 0xFFFF
+        s.st(0x0A, s.t, 2)
+        s.call(LAB.PWMLFO)
+        out.append(s.m[0x0C40 + 4])
+    return out
+
+
+s = pw_rig()
+v = pw_run(s)
+swing = 36 * 255 >> 7
+check(min(v[10:]) == 128 and max(v) <= 128 + swing and max(v) >= 128 + swing - 2,
+      'PWM 3 on a square: width sweeps 128..%d (got %d..%d)' % (128 + swing, min(v[10:]), max(v)))
+cross = sum(1 for a, b in zip(v, v[1:]) if a < 160 <= b)
+f = 640 * 51 / 65536 / 65536 / 2e-6
+check(abs(cross - 2 * f) <= 1, 'LFO RATE 50: about %.2f Hz (%d rising crossings in 2 s)' % (f, cross))
+check(s.m[0x76] == 0x5A and s.m[0x77] == 0xA5, "the caller's r76/r77 are kept")
+for dt, rate in ((4, 10), (2, 0), (40, 10), (250, 100)):   # visits 8 / 4 / 80 / 500 us apart: no step may be lost
+    s = pw_rig(rate=rate)
+    n = 3000
+    pw_run(s, n, dt)
+    ph = (s.m[LAB.PW_PHASE] | s.m[LAB.PW_PHASE + 1] << 8) << 16 | s.m[LAB.PW_FRAC] | s.m[LAB.PW_FRAC + 1] << 8
+    want = (LAB.PW_K * (rate + 1) * n * dt) & 0xFFFFFFFF
+    check(ph == want, 'visits %d us apart, RATE %d: LFO phase exact (%08X, want %08X)' % (dt * 2, rate, ph, want))
+s = pw_rig(pcm_byte=0x7A, pw=75)
+v = pw_run(s, 400)
+check(max(v) == 255 and min(v[5:]) >= 128, 'PWM 10 + a narrow PW: clamps at 255 (got %d..%d)' % (min(v[5:]), max(v)))
+for kw, what in ((dict(pcm_byte=0), 'byte 0 (off)'), (dict(pcm_byte=49), 'a stray PCM byte (DoctorSolo 49)'),
+                 (dict(pcm_byte=0x7B), '$7B (past 10)'), (dict(wave=1), 'a saw partial'), (dict(pcm_partial=True), 'a PCM partial')):
+    s = pw_rig(**kw)
+    v = pw_run(s, 50)
+    check(set(v) == {0x11}, 'PWM leaves the width alone for %s' % what)
 print('ALL OK, %d checks' % len(OK))

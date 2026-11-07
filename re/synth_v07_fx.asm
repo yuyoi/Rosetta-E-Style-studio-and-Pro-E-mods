@@ -192,6 +192,114 @@ fi_lp:  ldaa 0,x
         staa WETA
         clr RACT
         clr PKF
+        clr BMODE               ; v0.10: bender = pitch
+        clr BSKIP
+        ldaa #$FF
+        staa BLAST
+        rts
+
+; ---- v0.10 BENDER: CUTOFF / RESO move the DSP filter (IC13 mode 0) around the LIVE FILTER dial values (FXT/FXL[0])
+bendchg: jsr getval
+        psha
+        ldx IT
+        ldab IT_MAX,x
+        stab MAXV
+        pulb
+        jsr addclamp
+        stab BMODE
+        ldaa #$FF
+        staa BLAST              ; the next bend sends
+        tstb
+        beq bc_x
+        clr FXM                 ; CUTOFF / RESO: put the filter on at the dial values
+        ldx #FXT
+        jmp fxsend
+bc_x:   rts
+
+; B = raw bender A/D (0-255, centre ~128). Offset -8..+8 cutoff steps, dead zone 122-135 like the stock bend table.
+bend:   clr BSKIP
+        ldaa BMODE
+        bne bd_on
+        clc
+        rts
+bd_on:  ldaa #1
+        staa BSKIP
+        cmpb #136
+        bcc bd_hi
+        cmpb #122
+        bcc bd_0
+        ldaa #136               ; down: -((136 - raw) >> 4)
+        sba
+        lsra
+        lsra
+        lsra
+        lsra
+        nega
+        bra bd_g
+bd_hi:  tba                     ; up: (raw - 120) >> 4
+        suba #120
+        lsra
+        lsra
+        lsra
+        lsra
+        bra bd_g
+bd_0:   clra
+bd_g:   staa OFFS
+        ldab FXT                ; s = time & 3 (RESO), k = level * 2 + time >> 2 (CUTOFF)
+        andb #3
+        stab TMP
+        ldaa FXT
+        lsra
+        lsra
+        anda #1
+        adda FXL
+        adda FXL
+        ldab BMODE
+        cmpb #1
+        bne bd_res
+        adda OFFS               ; CUTOFF: k + offset, 0..15, never the OFF combination
+        bpl bd_c1
+        clra
+bd_c1:  cmpa #15
+        bls bd_c2
+        ldaa #15
+bd_c2:  tsta
+        bne bd_s
+        tst TMP
+        bne bd_s
+        ldaa #1
+        bra bd_s
+bd_res: ldab TMP                ; RESO: bend up = the RES version, down = without
+        tst OFFS
+        beq bd_s
+        bmi bd_r0
+        orab #1
+        bra bd_r1
+bd_r0:  andb #2
+bd_r1:  stab TMP
+bd_s:   tab                     ; B = k
+        aslb
+        aslb
+        orab TMP                ; k * 4 + s
+        cmpb BLAST
+        beq bd_x
+        stab BLAST
+        tab                     ; level = k >> 1, time = (k & 1) * 4 + s
+        lsra
+        staa TXB+5
+        andb #1
+        aslb
+        aslb
+        orab TMP
+        stab TXB+4
+        clr TXB+3               ; mode 0 = RESONANT FILTER
+        ldd #$1000
+        std TXB
+        ldaa #$01
+        staa TXB+2
+        ldaa #6
+        jsr dtn
+bd_x:   clc
         rts
 
 ; ---- REMOTE CONTROL over MIDI IN: F0 7D 52 xx cmd args F7 (7D = non-commercial ID, 52 = 'R'). The PRO-E's MIDI

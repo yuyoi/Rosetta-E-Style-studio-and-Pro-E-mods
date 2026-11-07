@@ -22,7 +22,7 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 *Styled after the PRO-E's front panel: the 4 × 8 MUSIC STYLE buttons, green backlit LCD, style library on the right.*
 
 🎧 **Listen:** [▶️ play it on the project page](https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/#listen) · [MP3](docs/audio/roland-pro-e-rosetta-os-juno-chorus-resonant-filter-jam.mp3): JSW jamming the PRO-E, Juno chorus + resonant DSP filter
-(2 min 35 s, recorded straight from her outputs on the current dev build; the filter and bender firmware comes to this repo next).
+(2 min 35 s, recorded straight from her outputs; the filter, bender and PWM firmware are all in this repo now, OS v0.11).
 
 ## What works (tested on a real PRO-E)
 
@@ -33,9 +33,12 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 | **Any TN-SC1 card style → an internal slot** | pick from all 16 MSL-15 cards (~68 styles), byte-checked against the original card data |
 | **OS text** | your own boot banner and version screen |
 | **SYNTH EDIT** | press CURSOR: tone editing on her own panel, 19 pages (Juno, filter, envelope, pitch env, LFO, voice, waves, live filter, effects…), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
-| **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel |
+| **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel. **PWM** knob (0-10): real pulse-width modulation, an LFO in IC28 rewrites the LA chip's pulse width, LFO RATE sets the speed. `tools/juno_patch.py strings` loads a Juno PWM string patch |
 | **Live filter** | cutoff and resonance changes reach notes you're holding (IC28 build), so filter sweeps work like a real knob |
-| **ROSETTA FX** | new programs for her Boss reverb chip (IC13): a moving **Juno chorus** (the full Juno-60 sweep, 128 positions, no clicks), **delay** 40-495 ms with feedback, **lo-fi** bit crush, **drive**, **flanger**, plus Roland's plate. Per-part routing keeps the drums dry. [re/REVERB_CHIP.md](re/REVERB_CHIP.md) |
+| **Resonant filter** | a state-variable filter running *on the Boss reverb chip* (IC13 mode 0): LP, LP RES, BP, BP RES, 110 Hz-7 kHz in 16 steps. Filters everything sent to the effect, PCM samples too. LIVE FILTER page: FX CUTOFF / FX RESO |
+| **BENDER mode** | PITCH / CUTOFF / RESO: the bender sweeps the resonant filter instead of the pitch. Bandpass + bender = a wah |
+| **Wet-only mod** | cut **R27 + R31** on the CK-34 and parts with the effect on are heard *only* through the effect, so an effect sounds like an effect. REVERB OFF plays every part dry (IC28 v7 reroutes them). [re/REVERB_CHIP.md](re/REVERB_CHIP.md#wet-only-mod-r27--r31) |
+| **ROSETTA FX** | new programs for her Boss reverb chip (IC13): a moving **Juno chorus** (the full Juno-60 sweep, 128 positions, no clicks), **delay** 40-495 ms with feedback, **lo-fi** bit crush, **drive**, **flanger**, **Juno chorus + reverb** (D-50 style), the resonant filter, plus Roland's hall. Per-part routing keeps the drums dry. [re/REVERB_CHIP.md](re/REVERB_CHIP.md) |
 | **MIDI remote** | `tools/proe_link.py`: press her keys, turn the dial and read her screen from a PC, and record her through an audio interface. Every effect above was measured on her this way |
 | **Pin-31 mod** | one wire through a sacrificial socket: the CPU switches IC7's two halves, so the full 512 KB of a W27C040 is usable. [docs/PIN31_MOD.md](docs/PIN31_MOD.md) |
 | **Build + burn** | W27C040 (IC7), W27C512 (IC4, IC28, IC13) images: ID check, write, verify, readback. Drop-in, no board mods (except SYNTH EDIT) |
@@ -103,11 +106,11 @@ Planned, roughly in order ([ROADMAP.md](ROADMAP.md)):
 - **Style Maker in the app:** drop a MIDI file, it finds the most-repeated loop (BASIC), the second one (VARIATION), the fills,
   intro and ending by itself, and you just check its picks.
 - **TN-SC1 card adapter:** burn song styles onto a card for any E-series.
-- **LFO block in IC28:** Juno-style PWM, LFO → filter and delayed vibrato (the "breathing" a Juno has).
+- **LFO block in IC28:** PWM is done. Next: LFO → filter, delayed vibrato, and the mod wheel as a second filter axis.
 - **D-50 flavour:** the PRO-E has the D-50's LA chip. D-50 style LFOs, chorus + reverb and the famous D-50 patches as presets.
 - **SYNTH EDIT save slots** on the WRITE key.
 - **Rosetta Wave:** custom samples in IC37/IC38 plus the wave/loop table in IC28 (long-sample bank built, being tested).
-- **Extra outputs:** the CK-34's 4051 demux has slots the board never uses (the MT-32 schematic shows SYN1/SYN2/REV split, two channels free).
+- **Extra outputs:** after the wet-only mod the SYN1 dry signal is free: tap IC18 pin 1 / IC2 pin 7 (through a cap, then a small TL072 buffer board) for outs 3-4. Being tested.
 
 ## Legal
 

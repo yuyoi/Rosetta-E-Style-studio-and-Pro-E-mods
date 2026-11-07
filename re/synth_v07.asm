@@ -38,6 +38,7 @@ K_CURSOR = $5D
 K_BANK1  = $38
 K_NUM1   = $40          ; NUMBER 1-6 = $40-$45
 K_NUM7   = $58          ; NUMBER 7-8 = $58-$59
+K_REVTP  = $5A          ; REVERB TYPE (stock: menu open while held, closes on release)
 BEAT     = $10          ; LED byte: bits 3..0 = tempo LEDs 1 (red) .. 4
 BEAT2    = $16          ; the same LEDs in the alternate (blink) frame
 
@@ -52,14 +53,18 @@ T_RING   = 7            ; ring mod of a structure byte, OFF / ON
 T_JUNO   = 8            ; v0.6 JUNO page: IT_AUX = op, IT_OFF = list id (255 = number)
 T_PW     = 9            ; pulse width shown as the LA32 duty cycle ("   25%")
 T_FX     = 10           ; v0.7 FX field: IT_AUX = reverb mode, IT_OFF = field, IT_OFF+1 = list id (255 = number)
+T_BEND   = 12           ; v0.10 BENDER = PITCH / CUTOFF / RESO (BMODE), IT_OFF = list id
 T_WET    = 11           ; v0.7 PART FX routing: IT_AUX 0 = this part, 1 = all 8 parts, IT_OFF = list id
 J_PWM    = 4            ; JUNO ops: 0 MAKE JUNO, 1-3 SAW/PULSE/SUB level (P1/P2/P3), 4 PW MODE (P2), 5 DETUNE (P4), 6 RANGE
 J_DET    = 5
+J_PWMD   = 7            ; v0.11 PWM 0-10 = real PWM: P2's PCM-wave byte (unused on a synth partial) = $70 + depth,
+                        ; IC28 v8 sweeps the LA32 pulse width of square partials from it (LFO RATE = speed)
 WG_COARSE = 0           ; partial offsets
 WG_FINE  = 1
 WG_KEYF  = 2
 WG_BEND  = 3
 WG_WAVE  = 4
+WG_PCM   = 5            ; PCM wave number (ignored by a synth partial: v0.11 PWM depth $71-$7A)
 WG_PW    = 6
 PE_DEPTH = 8
 PE_L0    = 15
@@ -86,11 +91,27 @@ PG_IDX   = 13
 entry:  tsta
         beq e_key
         cmpa #1
-        beq tick
-        jmp midi                ; v0.7: A = 2 MIDI status / 3 MIDI data, B = the byte (remote control)
+        bne e_m4
+        jmp tick                ; (v0.7b: out of branch range now)
+e_m4:   cmpa #4
+        bne e_midi
+        jmp bend                ; v0.10: A = 4 bender, B = raw A/D
+e_midi: jmp midi               ; v0.7: A = 2 MIDI status / 3 MIDI data, B = the byte (remote control)
 e_key:  ldaa EDIT
         bne inedit
+        ldaa KEYCODE            ; v0.7b: REVERB TYPE toggles its menu (press = open, press again = close)
+        cmpa #K_REVTP
+        bne ek_cur
         tstb
+        bpl eat                 ; the release no longer closes it
+        ldaa MENUS
+        anda #$40
+        beq pass                ; closed: the press opens it, as stock
+        tsx                     ; open: hand the stock code a release instead (B on FAR's stack) = it closes
+        clr 4,x
+        clc
+        rts
+ek_cur: tstb
         bpl pass
         ldaa KEYCODE            ; CURSOR opens it: no LED, and stock only uses it inside its menus
         cmpa #K_CURSOR
@@ -516,8 +537,12 @@ gv1f:   cmpb #T_FX
         bne gv1w
         jmp fxget
 gv1w:   cmpb #T_WET
-        bne gv1p
+        bne gv1b
         jmp wetget
+gv1b:   cmpb #T_BEND
+        bne gv1p
+        ldaa BMODE
+        rts
 gv1p:   jsr actmask
         ldaa REFP
         jsr pbase
@@ -614,8 +639,11 @@ ch2f:   cmpb #T_FX
         bne ch2w
         jmp fxchg
 ch2w:   cmpb #T_WET
-        bne ch3
+        bne ch2b
         jmp wetchg
+ch2b:   cmpb #T_BEND
+        bne ch3
+        jmp bendchg
 ch3:    jsr getval              ; A = current value (sets MASK)
         ldx IT
         ldab IT_FLAGS,x
@@ -989,7 +1017,10 @@ fvj:    cmpb #T_FX
         ldaa IT_OFF+1,x
         bra fvn
 fvw:    cmpb #T_WET
+        beq fvw2
+        cmpb #T_BEND
         bne fvj2
+fvw2:
         ldaa IT_OFF,x
         jmp fvlst
 fvj2:   cmpb #T_JUNO
@@ -1111,8 +1142,20 @@ jg5:    cmpa #J_DET
         bcc jg5a
         clra
 jg5a:   rts
-jg6:    ldaa WORK+14+WG_COARSE  ; RANGE from P1
+jg6:    cmpa #J_PWMD
+        beq jg7
+        ldaa WORK+14+WG_COARSE  ; RANGE from P1
         jmp jrng
+jg7:    ldaa WORK+14+58+WG_PCM  ; PWM: P2's byte $71-$7A = depth 1-10, anything else = off
+        tab
+        andb #$F0
+        cmpb #$70
+        bne jg7z
+        anda #$0F
+        cmpa #10
+        bls jg7a
+jg7z:   clra
+jg7a:   rts
 
 ; A = partial 0-3 -> A = its level, 0 when it is switched off
 jlev:   psha
@@ -1123,9 +1166,11 @@ jlev:   psha
         andb WORK+$0C
         pula
         tstb
-        beq jg0
+        beq jl0
         jsr pbase
         ldaa TVA_LEVEL,x
+        rts
+jl0:    clra
         rts
 
 ; A = coarse -> A = RANGE step 0-3 (16' 8' 4' 2' = coarse 24 36 48 60)
@@ -1157,8 +1202,12 @@ jc1:    cmpb #J_PWM
         bcs jsetlv
         beq jsetpw
         cmpb #J_DET
-        beq jsetdt
-        jmp jsetrg
+        bne jc_pm
+        jmp jsetdt
+jc_pm:  cmpb #J_PWMD
+        bne jc_rg
+        jmp jsetpm
+jc_rg:  jmp jsetrg
 
 jsetlv: decb                    ; SAW / PULSE / SUB level
         tba
@@ -1208,11 +1257,23 @@ jsetpw: ldx #pwtab              ; P2 pulse width
         ldab NEWV
         abx
         ldaa 0,x
-        psha
+        staa JC
+        ldaa #1
+        jsr pbase
+        ldaa JC
+        ldab #WG_PW
+        jsr putb
+        jmp leds
+
+; v0.11 PWM: P2's PCM-wave byte = $70 + depth (0 = 0 = off). A synth partial ignores that byte; IC28 v8 reads it.
+jsetpm: ldaa NEWV
+        beq jp_w
+        adda #$70
+jp_w:   psha
         ldaa #1
         jsr pbase
         pula
-        ldab #WG_PW
+        ldab #WG_PCM
         jsr putb
         jmp leds
 
@@ -1288,6 +1349,7 @@ jm_p:   ldaa 0,y
         ldaa 2,y
         staa WG_FINE,x
         clr WG_PW,x
+        clr WG_PCM,x            ; v0.11: no PWM after MAKE JUNO (and no stray byte)
         ldaa #11                ; key follow 1
         staa WG_KEYF,x
         ldaa #1                 ; bender on

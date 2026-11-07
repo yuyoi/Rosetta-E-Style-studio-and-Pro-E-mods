@@ -16,6 +16,8 @@
    v4: the panel's JUNO CHORUS (mode 1) plays chorus B: the stepper sets mode bits 1-3 to 3 (IC13 modes 6/7) and
    steps mode bit 0 as the third row bit; leaving gives the stock mode back (sub_4CFC). IC13 mode 1 (v4 chorus) is then
    only a fallback.
+   v6 (2026-11-06, IC13 v7 SUPER FX): no redirect any more. Mode 1 = Roland's HALL (static), the panel's Juno types send
+   mode 6 directly; mode 5 (JUNO + REVERB) sweeps 64 positions like the flanger (mode 4).
    v2: snake order (odd 16-rows get bits 0-3 inverted) so each step changes ONE latch: the two writes left the chip
    on position 0 / 31 for an instant at every row crossing = the clicks heard on her (gen_chorus.snake, IC13 v2).
    RAM 0xDF00-0xDF05 (0xC000-0xDFFF is unused, fw_map B1).
@@ -28,10 +30,13 @@ import build_ck34_live as LIVE
 
 BUILD = os.path.join(HERE, '..', 'build')
 TURN, IDLE, STEPPER = 0x2AEB, 0x529C, 0x6300
+DRYOFF, ROUTE_READS = 0x6500, (0x3460, 0x348B + 5, 0x350A, 0x3538 + 5)   # v7
+PWMLFO, PW_LAST, PW_PHASE, PW_DEPTH, PW_FRAC = 0x6520, 0xDF20, 0xDF22, 0xDF24, 0xDF26   # v8: real PWM
+PW_K = 640              # phase step per 2 us tick = K * (LFO RATE + 1) / 65536: rate 0 = 0.075 Hz, 100 = 7.5 Hz
 ROUTE, PATCH_REV_MAX, SYS_MODE_MAX = 0x39C2, 0x4849, 0x485D
 CH_LAST, CH_PHASE, CH_POS, CH_MODE, CH_BIG = 0xDF00, 0xDF02, 0xDF04, 0xDF06, 0xDF07
 CHORUS_B = 6                                                # v3: modes 6 + 7 = JUNO CHORUS B, 128 positions
-CHORUS_MODE, FLANGER_MODE = 1, 4
+JUNOREV_MODE, FLANGER_MODE = 5, 4                    # v6 (IC13 v7 SUPER FX): mode 1 is HALL, no redirect
 RATES_HZ = [0.25, 0.4, 0.51, 0.7, 0.86, 1.5, 3.0, 6.0]      # TIME 0-7 (2 = Juno Chorus I, 4 = Chorus II)
 SPAN = [0, 8, 16, 24, 32, 44, 54, 62]                       # LEVEL 0-7, in chorus positions (1-63)
 SPAN2 = [0, 24, 48, 80, 124, 124, 124, 124]                # chorus B: LEVEL 4-7 = the full Juno sweep (1.7-5.3 ms, 0.513 / 0.863 Hz). v4 had half
@@ -46,7 +51,7 @@ def build(base=None):
     if base is None:                                    # the LONG2 wave build if you have one, else your stock IC28 dump
         long2 = os.path.join(BUILD, 'waves_long2', 'IC28_R15179974_patched.bin')
         base = long2 if os.path.exists(long2) else None
-    rom, _, _ = LIVE.build(base)
+    rom, lcode, _ = LIVE.build(base)
     rom = bytearray(rom)
     assert rom[ROUTE:ROUTE + 8] == bytes.fromhex('9890181f070f0008'), 'routing table not stock'
     rom[ROUTE + 2], rom[ROUTE + 3] = 0x80, 0x88
@@ -56,14 +61,14 @@ def build(base=None):
 
     from mcs96_asm import Asm
     syms = dict(CH_LAST=CH_LAST, CH_PHASE=CH_PHASE, CH_POS=CH_POS, CH_MODE=CH_MODE, CH_BIG=CH_BIG, IDLE=IDLE,
-                CHORUS_MODE=CHORUS_MODE,
+                JUNOREV_MODE=JUNOREV_MODE,
                 FLANGER_MODE=FLANGER_MODE, CHORUS_B=CHORUS_B)
     a = Asm(STEPPER, syms)
     a.src('''
     STEP:   ldb   r70, 0xed95           ; reverb mode
             stb   r70, CH_MODE
-            cmpb  r70, #CHORUS_MODE       ; v4: the panel's JUNO CHORUS (mode 1) plays chorus B (IC13 modes 6 + 7)
-            je    st_big
+            cmpb  r70, #JUNOREV_MODE      ; v6: mode 5 JUNO + REVERB sweeps 64 positions (mode 1 = HALL, static)
+            je    st_64
             cmpb  r70, #FLANGER_MODE      ; mode 4 sweeps 64 positions (IC13 mode 4)
             je    st_64
             andb  r71, r70, #0xfe
@@ -168,6 +173,89 @@ def build(base=None):
     rom[STEPPER:STEPPER + len(code)] = code
     d = (STEPPER - (TURN + 3)) & 0xFFFF
     rom[TURN + 1:TURN + 3] = d.to_bytes(2, 'little')
+    # v7 (2026-11-07, after the dry-B mod: reverb-ON parts play only through IC13): REVERB OFF on the panel sends
+    # time 0 + level 0. Then every new note takes routing entry 0 (dry), so nothing goes silent with the effect off.
+    # The four routing reads `ldb r74, 0x39c2[r70]` (melodic 0x3460/0x350A, rhythm 0x3490/0x353D) -> lcall DRYOFF.
+    b = Asm(DRYOFF, {})
+    b.src('''
+    DRYOFF: ldb   r75, 0xed96           ; reverb time (r75 is free here: every site sets it before use)
+            orb   r75, 0xed97           ; | reverb level
+            jne   do_on
+            clrb  r70                   ; REVERB OFF: entry 0 = dry
+    do_on:  ldb   r74, 0x39c2[r70]      ; the stock read
+            ret
+    ''')
+    dcode = bytes(b.assemble())
+    assert all(x == 0xFF for x in rom[DRYOFF:DRYOFF + len(dcode)]), 'DRYOFF area not free'
+    rom[DRYOFF:DRYOFF + len(dcode)] = dcode
+    for site in ROUTE_READS:
+        assert rom[site:site + 5] == bytes.fromhex('b371c23974'), hex(site)
+        rel = (DRYOFF - (site + 3)) & 0xFFFF
+        rom[site:site + 5] = bytes([0xEF]) + rel.to_bytes(2, 'little') + bytes([0xFD, 0xFD])   # lcall DRYOFF ; nop ; nop
+    # v8 (2026-11-07): REAL PWM. The live-filter hook (LIVECUT, once per sounding partial per pass) now ends in PWMLFO:
+    # a square synth partial whose PCM-wave byte (unused by synth partials) is $71-$7A gets its LA32 pulse width
+    # (0x0C40 + 2p) rewritten from one triangle LFO: width = max(Roland's 0x128C[PW], 128 = square) + depth*12 * tri/128,
+    # tri 0..255, LFO speed = the partial's own LFO RATE (the Juno's one LFO). r76/r77 are kept (the caller uses r76).
+    c = Asm(PWMLFO, dict(PW_LAST=PW_LAST, PW_PHASE=PW_PHASE, PW_DEPTH=PW_DEPTH, PW_FRAC=PW_FRAC, PW_K=PW_K))
+    c.src('''
+    PWMLFO: ldb   r70, 0xef80[r40]      ; PCM partial: no pulse
+            jbs!  r70, 7, pw_x
+            ldb   r75, 0x05[r56]        ; PWM depth signature $71-$7A
+            ldb   r74, r75
+            andb  r74, #0xf0
+            cmpb  r74, #0x70
+            jne!  pw_x
+            andb  r75, #0x0f
+            je!   pw_x
+            cmpb  r75, #10
+            jgt!  pw_x
+            stb   r75, PW_DEPTH         ; (r75 is half of the word r74 below)
+            ldb   r74, 0x04[r56]        ; waveform bit 0 = saw: square partials only
+            jbs!  r74, 0, pw_x
+            ld    r72, timer1           ; one LFO for everything: phase += elapsed * K * (rate + 1)
+            sub   r74, r72, PW_LAST
+            st    r72, PW_LAST
+            ldbze r78, 0x14[r56]
+            inc   r78
+            ld    r70, #PW_K
+            mulu  r70, r78              ; r70 = K * (rate + 1)  (< 65536)
+            mulu  r70, r74              ; r70:r72 = the phase step (32 bit)
+            ld    r78, PW_FRAC          ; v8.1: keep the fraction (one partial per main-loop pass = tiny steps;
+            add   r78, r70              ; dropping the low word lost most of a slow LFO)
+            st    r78, PW_FRAC
+            ld    r78, PW_PHASE
+            addc  r78, r72
+            st    r78, PW_PHASE
+            jbc   r79, 7, pw_t          ; triangle
+            not   r78
+    pw_t:   shl   r78, #1               ; r79 = 0..255
+            ldbze r70, PW_DEPTH         ; depth * 12
+            ld    r74, r70
+            shl   r70, #3
+            shl   r74, #2
+            add   r70, r74
+            ldbze r74, r79
+            mulu  r70, r74              ; r70 = depth*12 * tri
+            shr   r70, #7               ; swing 0..239
+            ldbze r72, 0x06[r56]        ; Roland's width for the tone's PW
+            ldbze r74, 0x128c[r72]
+            cmp   r74, #128
+            jge   pw_b
+            ld    r74, #128             ; below 128 the LA32 plays a square: start the sweep there
+    pw_b:   add   r74, r70
+            cmp   r74, #255
+            jle   pw_w
+            ld    r74, #255
+    pw_w:   stb   r74, 0x0c40[r40]      ; LA32 pulse width, live
+    pw_x:   ret
+    ''')
+    pcode = bytes(c.assemble())
+    assert all(x == 0xFF for x in rom[PWMLFO:PWMLFO + len(pcode)]), 'PWMLFO area not free'
+    rom[PWMLFO:PWMLFO + len(pcode)] = pcode
+    ret = LIVE.LIVECUT + len(lcode) - 1
+    assert rom[ret] == 0xF0 and rom[ret + 1:ret + 3] == bytes([0xFF, 0xFF]), 'LIVECUT does not end in ret + free bytes'
+    rel = (PWMLFO - (ret + 3)) & 0xFFFF
+    rom[ret:ret + 3] = bytes([0xE7]) + rel.to_bytes(2, 'little')          # ret -> ljmp PWMLFO
     return bytes(rom), code, a
 
 

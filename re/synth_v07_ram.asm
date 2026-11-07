@@ -120,4 +120,16 @@ RPEND:   tst PKF
          ldab PKB
          jsr RAMKEY
 RPX:     rts
+; ---- v0.10: bender hook. IC7 bank 0 $551D (stab $266C, B = raw bender A/D) jsr here. The SYNTH code decides:
+; BENDER = PITCH: back to $5520, the stock pitch bend. CUTOFF / RESO: it moved the DSP filter, BSKIP = 1, return
+; straight to the A/D loop (no pitch bend sent). FAR keeps B.
+HBD:     stab $266C              ; the replaced instruction
+         ldaa #4
+         ldx #HBD2
+         jmp FAR
+HBD2:    tst BSKIP
+         beq HBDX
+         ins                     ; drop the return to $5520
+         ins
+HBDX:    rts
 HOOK_END:

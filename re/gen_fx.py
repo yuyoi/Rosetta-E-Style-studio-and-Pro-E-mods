@@ -21,6 +21,24 @@ import gen_chorus as GC
 OUT = os.path.join(HERE, '..', 'build', 'fx')
 FS = 32000
 ALL = 0xF
+# v8.1 (2026-11-07, after the dry-B mod R27/R31 cut: reverb-ON parts are FX ONLY): output make-up gain, measured
+# FX-only vs dry = -1.7 dB L / -4.1 dB R on her. Both sides x1.25 (+1.9 dB, exponents 0 + 2): the same for every PRO-E
+# (her weak R effect path, 0.60 vs 0.81 of the dry before the mod, is her analog side). HALL: output x2 (hall_block).
+# OUT_GAIN = False rebuilds v8.
+OUT_GAIN = True
+# v8.2 (2026-11-07): the Juno chorus (modes 6/7) and JUNO+REV mix the DRY back in inside the chip, per side (the dry-B
+# mod removed the analog dry these parts had): out = dry x1.25 + chorus x0.625 (the chorus line runs at 2x the chip's
+# halved input, so that is a 1:1 Juno mix at the make-up gain of the other effects). JUNO+REV: dry x1 into its totals,
+# x1.25 by the output gain. False = v8.1.
+CH_DRY = False
+DRY_X = lambda on: {0: on, 1: on, 2: on}       # chorus B: dry x1.75 + chorus x0.875 (line = 2x the chip input): 1:1
+
+
+def gain(on, side, e0=0):
+    """output read masks: {e0: on} times the side's make-up gain"""
+    if not OUT_GAIN:
+        return {e0: on}
+    return {e0: on, e0 + 2: on}
 
 
 class Step:
@@ -123,9 +141,9 @@ def delay_program(k):
     p.wracc(40, 0)                                 # buf[n]
     on = ALL if k else 0xE                         # program 0, time 0 = REVERB OFF: silent
     p.read(41, 0x4000 - D - 224)
-    p.mac(41, {0: on}, clear=True)                 # out R = buf[n-D-7ms]   (latched at 47)
+    p.mac(41, gain(on, 'R'), clear=True)           # out R = buf[n-D-7ms]   (latched at 47)
     p.read(47, 0x4000 - D)
-    p.mac(47, {0: on}, clear=True)                 # out L = buf[n-D]       (latched at 56)
+    p.mac(47, gain(on, 'L'), clear=True)           # out L = buf[n-D]       (latched at 56)
     return p.bytes()
 
 
@@ -150,11 +168,11 @@ def tone_pole(p, zr, zw, i=0):
     return i + 7
 
 
-def lofi_program(k):
+def lofi_program(k, idx=None):
     """runs at the start of the frame on this frame's R and last frame's L (1 sample later: inaudible),
     so the result sits in the accumulator for both output latches (47 and 56)."""
     p = Prog()
-    c, d = CRUSH[k]
+    c, d = CRUSH[k if idx is None else idx]
     i = tone_pole(p, 0x3FFF, 0)                    # z[n] at offset 0 (read back at 0x3FFF next frame), shifter = z
     p.mac(i, {c: ALL}, clear=True)                 # acc = z >> c (CRUSH drops c bits)
     i += (c + 1) // 2 + 1
@@ -165,13 +183,123 @@ def lofi_program(k):
     assert i <= 31, 'lo-fi program %d too long (%d)' % (k, i)
     on = ALL if k else 0xE                         # program 0 + time 0 = REVERB OFF: silent
     p.wracc(i, 6, load=True)                       # re-load the result to gate it for OFF
-    p.mac(i, {0: on}, clear=True)                  # acc = result (or 0 when OFF), held until both latches
+    p.mac(i, gain(on, 'R'), clear=True)            # acc = result (or 0 when OFF), held for the R latch
     p.wrin(40, 5)                                  # L[n] for the next frame
+    if OUT_GAIN:
+        p.read(48, 6); p.mac(48, gain(on, 'L'), clear=True)   # L latch: the result again at the L gain
     return p.bytes()
 
 
 def flange_delay(p):
     return 8 + round(120 * (p - 1) / 62) if p else 8      # 0.25-4 ms
+
+
+def flanger_program_v2(k):
+    """v7 (2026-11-06): the flanger with the chorus B smoothing. Same two comb lines (R line steps 0-9 at 0x0000,
+    L line 32-41 at 0x2000, feedback 0.75, opposite sweeps); the output taps move before the lines' own steps and
+    each goes through 2 low-pass poles after the tap (gen_fx.pole_chain), parked and read back for the latches:
+    R taps 10-13 + poles 14-20, L taps 21-24 + poles 25-31, read back at 46 (latched 47) and 48 (latched 56)."""
+    p = Prog()
+    pos = [GC.snake(k * 4 + s) for s in range(4)]
+
+    def line(start, inp_off, base, delays):
+        p.wrin(start, inp_off, load=True)
+        p.mac(start, {0: ALL}, clear=True)
+        i = start + 1
+        for s, d in enumerate(delays):
+            p.read(i, base - d)
+            p.mac(i, {1: 1 << s, 2: 1 << s})
+            i += 2
+        p.wracc(i, base)
+    dR = [flange_delay(q) for q in pos]
+    dL = [flange_delay(63 - q) if q else 8 for q in pos]
+    line(0, 1, 0x4000, dR)                         # steps 0-9
+    line(32, 2, 0x2000, dL)                        # steps 32-41
+    post = [POLE_HALF, POLE_HALF]
+    for s, d in enumerate(dR):
+        p.read(10 + s, 0x4000 - d); p.mac(10 + s, {0: (1 << s) if pos[s] else 0}, clear=(s == 0))
+    assert pole_chain(p, 14, 'R', post) == 20
+    for s, d in enumerate(dL):
+        p.read(21 + s, 0x2000 - d); p.mac(21 + s, {0: (1 << s) if pos[s] else 0}, clear=(s == 0))
+    assert pole_chain(p, 25, 'L', post) == 31
+    p.read(45, CH_POST_Z['R'] + 0x100); p.mac(45, gain(ALL, 'R'), clear=True)   # out R (47)
+    p.read(48, CH_POST_Z['L'] + 0x100); p.mac(48, gain(ALL, 'L'), clear=True)   # out L (56)
+    return p.bytes()
+
+
+# ---- v7 JUNO + REVERB (mode 5): the chorus (64 positions, IC28's 64-position stepper path) + 3 feedback combs ----
+CR_G = {1: ALL, 2: ALL, 3: ALL}                  # comb feedback 0.875 (adds only): ~1.3-1.8 s tails
+CR_IN = {2: ALL} if True else {3: ALL}           # v8.2: comb input 1/4 = DC gain 2 (+6 dB; was 1/8 = DC gain 1)
+CR_MIX = 0                                       # v8.2: combs mixed in at x1 (+6 dB; was 1/2 = exponent 1)
+CR_COMBS = [(0x2800, 863), (0x3000, 997), (0x3800, 1153)]   # (base, delay frames): 27 / 31 / 36 ms
+CR_RT, CR_LT = 0x0A00, 0x0E00                    # R / L totals, read back for the latches
+
+
+def comb(p, i, base, d, src, on=ALL):
+    """y = in/8 + 0.875 y[n-d], adds only. RAM at i, i+2, i+5; acc busy i..i+4 (i+4 may share a wrin step).
+    on = sawBits mask for the input (OFF = combination 0 gets no input, the tail dies out)."""
+    p.read(i, base - d); p.mac(i, CR_G, clear=True)          # 0.875 y[n-d]     (last add i+2 h0)
+    p.read(i + 2, src); p.mac(i + 2, {e: m & on for e, m in CR_IN.items()})   # + in/8   (i+4 h0)
+    p.wracc(i + 5, base)
+
+
+def chorus_rev_block():
+    """mode 5 JUNO + REVERB: the Juno chorus (line + 1 smoothing pole per side, 64 positions over 1.7-5.3 ms,
+    combination c = level * 8 + time, position = snake(c)) + 3 feedback combs (R chorus, L chorus, the dry line)
+    mixed in at 1/2. Layout: line 0-10, R taps 11-14 + pole 15-18, L taps 19-22 + pole 23-26, comb 1 28-33 (step 32
+    = the L-input wrin, no RAM in the comb there), comb 2 34-39, R total 40-44, read back 46 (latched 47),
+    comb 3 47-52, L read back 55 (last frame's total, latched 56), L total 56-60. Combination 0 = chorus off."""
+    (b1, d1), (b2, d2), (b3, d3) = CR_COMBS
+    zr, zl = CH_POST_Z['R'], CH_POST_Z['L']
+    progs = []
+    for k in range(16):
+        p = Prog()
+        chorus_line(p, CH_IN2)
+        for s in range(4):
+            c = k * 4 + s
+            q = GC.snake(c)
+            on = (1 << s) if c else 0
+            p.read(11 + s, 0x4000 - GC.delay(q)); p.mac(11 + s, {0: on}, clear=(s == 0))
+            p.read(19 + s, 0x4000 - GC.delay(63 - q)); p.mac(19 + s, {0: on}, clear=(s == 0))
+        assert pole_chain(p, 15, 'R', [POLE_HALF]) == 18
+        assert pole_chain(p, 23, 'L', [POLE_HALF]) == 26
+        gate = ALL if k else 0xE                             # combination 0 = OFF: no comb input
+        comb(p, 28, b1, d1, zr, gate)
+        comb(p, 34, b2, d2, zl, gate)
+        p.read(40, zr); p.mac(40, {0: ALL}, clear=True)      # R = zR + y1/2 + y3[n-1]/2
+        p.read(41, b1); p.mac(41, {CR_MIX: ALL})
+        p.read(42, b3 - 1); p.mac(42, {CR_MIX: ALL})
+        if CH_DRY:                                           # v8.2: + 2 x R[n] dry (the chip halves its input)
+            p.read(43, 1); p.mac(43, {0: gate})
+            p.read(44, 1); p.mac(44, {0: gate})
+            p.wracc(45, CR_RT, load=True); p.mac(45, gain(ALL, 'R'), clear=True)   # out R (47) = total x1.25
+        else:
+            p.wracc(44, CR_RT)
+        if not CH_DRY:
+            p.read(45, CR_RT); p.mac(45, gain(ALL, 'R'), clear=True)   # out R (47)
+        comb(p, 47, b3, d3, 0, gate)                         # comb 3 <- the dry line
+        p.read(54, CR_LT - 1); p.mac(54, gain(ALL, 'L'), clear=True)   # out L (56) = last frame's L total
+        p.read(56, zl); p.mac(56, {0: ALL}, clear=True)      # L = zL + y2/2 + y3/2
+        p.read(57, b2); p.mac(57, {CR_MIX: ALL})
+        p.read(58, b3); p.mac(58, {CR_MIX: ALL})
+        if CH_DRY:                                           # v8.2: + 2 x L[n] dry (written at step 32)
+            p.read(59, 5); p.mac(59, {0: gate})
+            p.read(60, 5); p.mac(60, {0: gate})
+            p.wracc(61, CR_LT)
+        else:
+            p.wracc(60, CR_LT)
+        progs.append(p.bytes())
+    return b''.join(progs)
+
+
+LOFI_PICK = [0, 2, 4, 6, 8, 10, 12, 14]         # v7 mode 3 programs 0-7: the plain crush steps (16 / 14 / 13 ... 8 bits)
+DRIVE_PICK = [1, 3, 5, 7, 9, 11, 13, 15]        # v7 mode 3 programs 8-15: drive gain x4 ... x512, output >> 6
+
+
+def lofi_drive_block():
+    """v7 mode 3 = LO-FI (programs 0-7, level 0-3) + DRIVE (programs 8-15, level 4-7), TONE = time & 3 in both."""
+    out = [lofi_program(k, LOFI_PICK[k]) for k in range(8)] + [drive_program(8 + j, DRIVE_PICK[j]) for j in range(8)]
+    return b''.join(out)
 
 
 def flanger_program(k):
@@ -205,17 +333,19 @@ DRIVE = [(g, o) for g in (2, 3, 4, 5, 6, 7, 8, 9) for o in (5, 6)]   # (gain dou
 # v4.1 (2026-11-06, measured on her): output >> 1-2 was +26 dB over the dry (a clipped full-scale wave). >> 5-6 = about the dry level.
 
 
-def drive_program(k):
+def drive_program(k, idx=None):
     """mono -> low-pass TONE (time & 3) -> gain 2^g -> clamp (hard clip) -> back down: a parallel distortion"""
     p = Prog()
-    g, o = DRIVE[k]
+    g, o = DRIVE[k if idx is None else idx]
     i = tone_pole(p, 0x3FFF, 0) + 1                # z[n] in the accumulator
     for _ in range(g):
         p.wracc(i, 3, load=True); p.mac(i, {0: ALL}); i += 1
     on = ALL if k else 0xE
     p.wracc(i, 6, load=True)
-    p.mac(i, {o: on}, clear=True)                  # acc = clipped >> o (or 0 when OFF)
+    p.mac(i, gain(on, 'R', o), clear=True)         # acc = clipped >> o (or 0 when OFF)
     p.wrin(40, 5)
+    if OUT_GAIN:
+        p.read(48, 6); p.mac(48, gain(on, 'L', o), clear=True)
     return p.bytes()
 
 
@@ -317,7 +447,7 @@ def chorus_block_b(m0, post=None):
     for k in range(16):
         p = Prog()
         chorus_line(p, CH_IN2)          # v5.1: line = x -> wet = dry level, the Juno mix (was x/2, too dry)
-        tl, tr = (12, 34) if post else (48, 40)
+        tl, tr = (12, 23 if CH_DRY else 34) if post else (48, 40)
         for s in range(4):
             c = m0 * 64 + k * 4 + s
             q = GC.snake(c)
@@ -327,9 +457,27 @@ def chorus_block_b(m0, post=None):
         if post:
             w = pole_chain(p, 16, 'L', post)
             assert w < 32
-            p.read(48, CH_POST_Z['L'] + 0x100 * (len(post) - 1)); p.mac(48, {0: ALL}, clear=True)
+            if CH_DRY:                      # v8.2: out = dry x1 + chorus x0.625 (e1 + e3) per side
+                dry_on = ALL if (m0 or k) else 0xE                     # mode 6, time 0 + level 0 = OFF: silent
+                w = pole_chain(p, 27, 'R', post)                       # step 32 = an add only (the L-input wrin)
+                assert w == 33, w
+                p.s[w].load = True
+                p.s[w].h[1][0] = True                                  # clear, then 7/8 of the R chorus
+                p.s[w + 1].h[0][1] |= ALL                              # e1
+                p.s[w + 1].h[1][1] |= ALL                              # e2
+                p.s[w + 2].h[0][1] |= ALL                              # e3 (h0 of 35: before 35's load)
+                p.read(w + 2, 1); p.mac(w + 2, DRY_X(dry_on))         # + R[n] x1.75 (written at step 4), held to 47
+                p.read(48, CH_POST_Z['L'] + 0x100 * (len(post) - 1)); p.mac(48, {1: ALL, 2: ALL, 3: ALL}, clear=True)
+                p.read(50, 5); p.mac(50, DRY_X(dry_on))                # + L[n] x1.75 (written at step 32)
+                progs.append(p.bytes())
+                continue
+            p.read(48, CH_POST_Z['L'] + 0x100 * (len(post) - 1)); p.mac(48, gain(ALL, 'L'), clear=True)
             w = pole_chain(p, 38, 'R', post)
             assert w <= 46, w
+            if OUT_GAIN:                    # R output = acc after the last pole: + itself / 4 (load it at the write)
+                assert w <= 45, w
+                p.s[w].load = True
+                p.s[w + 1].h[1][1] |= ALL
         progs.append(p.bytes())
     return b''.join(progs)
 
@@ -516,18 +664,68 @@ def lab_block():
     return b''.join(progs)
 
 
+def _masks(st):
+    b0, b1, b2, b3 = st
+    return ((b1 >> 4) & 0xE) | (b2 >> 7), ((b3 >> 4) & 0xE) | ((b2 >> 6) & 1)
+
+
+def _set_masks(st, m0, m1):
+    b0, b1, b2, b3 = st
+    b1 = (b1 & 0x1F) | ((m0 & 0xE) << 4)
+    b3 = (b3 & 0x1F) | ((m1 & 0xE) << 4)
+    b2 = (b2 & 0x3F) | ((m0 & 1) << 7) | ((m1 & 1) << 6)
+    return bytes([b0, b1, b2, b3])
+
+
+def hall_block(stock):
+    """v8.1: Roland's HALL with the output x2 (+6 dB, for the FX-only path after the dry-B mod). Its output stage =
+    write + load the sum at 44 (R) / 53 (L), clear in that step's half-step 1, then LEVEL = which of e1..e4 add in
+    the next two steps. Every add moves one half-step earlier (e1 -> e0 into the free add of the load step): all 8
+    LEVELs keep their ratios, x2. OUT_GAIN = False keeps Roland's bytes."""
+    blk = bytearray(stock[0x1000:0x2000])
+    if not OUT_GAIN:
+        return bytes(blk)
+    for k in range(16):
+        for w in (44, 53):
+            o = k * 256 + w * 4
+            st = [bytes(blk[o + 4 * j:o + 4 * j + 4]) for j in range(3)]
+            assert not st[0][1] & 2 and not st[0][1] & 4 and not st[0][3] & 0x10, (k, w)   # write + load, clear h1
+            assert _masks(st[0])[1] == 0, (k, w)                                             # h1 of the load step free
+            for j in (1, 2):
+                assert st[j][1] & 6 == 6, (k, w + j)                                       # no RAM / load there
+                assert not st[j][1] & 8 and not st[j][3] & 8, (k, w + j)                   # no invert
+            seq = [_masks(st[1])[0], _masks(st[1])[1], _masks(st[2])[0], _masks(st[2])[1]]   # e1 e2 e3 e4
+            m0_0 = _masks(st[0])[0]
+            new = [_set_masks(st[0], m0_0, seq[0]), _set_masks(st[1], seq[1], seq[2]), _set_masks(st[2], seq[3], 0)]
+            blk[o:o + 12] = b''.join(new)
+    return bytes(blk)
+
+
+LAYOUT = 7                                       # 7 = v7 SUPER FX layout (v8: mode 0 = RESONANT FILTER); 5 = the v5.2 layout (burned 2026-11-06, abeac791)
+
+
 def build(stock):
-    """lower 16 KB = modes 0-3 (the PRO-E's 8 types). Upper 16 KB = modes 4-7, only reachable if IC13 A14 follows
-    reverb mode bit 2 (IC28 LAB unlocks mode 4-7): 4 FLANGER, 5 DRIVE, 6 HALL + 7 ROOM (Roland's, back again)."""
+    """8 modes x 4 KB (IC28 LAB unlocks mode 4-7, A14 follows mode bit 2). The stock IC13 = Room / Hall / Plate /
+    Tap delay in 4 KB blocks 0-3 (and again in the upper 16 KB).
+    v7 SUPER FX: 0 RESONANT FILTER (gen_filter.py, v8; was PLATE), 1 HALL (Roland's), 2 DELAY, 3 LO-FI + DRIVE, 4 FLANGER (smoothed), 5 JUNO + REVERB,
+    6 + 7 JUNO CHORUS B. IC28 v6 drives 4 + 5 (64 positions) and 6 + 7 (128); mode 1 is no longer redirected."""
     rom = bytearray(0x8000)
-    blocks = [stock[0x2000:0x3000],                # 0 REVERB = stock PLATE
-              chorus_block(),                      # 1 JUNO CHORUS v4 (v5 A, blended taps, measured no better: dropped)
-              b''.join(delay_program(k) for k in range(16)),     # 2 DELAY
-              b''.join(lofi_program(k) for k in range(16)),      # 3 LO-FI
-              b''.join(flanger_program(k) for k in range(16)),   # 4 FLANGER
-              b''.join(drive_program(k) for k in range(16)),     # 5 DRIVE
-              chorus_block_b(0),                   # 6 + 7 JUNO CHORUS B (v5: 128 positions, half-size steps)
-              chorus_block_b(1)]
+    if LAYOUT == 5:
+        blocks = [stock[0x2000:0x3000], chorus_block(),
+                  b''.join(delay_program(k) for k in range(16)), b''.join(lofi_program(k) for k in range(16)),
+                  b''.join(flanger_program(k) for k in range(16)), b''.join(drive_program(k) for k in range(16)),
+                  chorus_block_b(0), chorus_block_b(1)]
+    else:
+        import gen_filter as GF                       # (imports this module: load it late)
+        filter_block = GF.block
+        blocks = [filter_block(),                      # 0 RESONANT FILTER (v8; Plate dropped, user's pick 2026-11-07)
+                  hall_block(stock),                   # 1 HALL (Roland's, v8.1 output x2)
+                  b''.join(delay_program(k) for k in range(16)),        # 2 DELAY
+                  lofi_drive_block(),                  # 3 LO-FI (levels 0-3) + DRIVE (levels 4-7)
+                  b''.join(flanger_program_v2(k) for k in range(16)),   # 4 FLANGER, smoothed
+                  chorus_rev_block(),                  # 5 JUNO + REVERB
+                  chorus_block_b(0),                   # 6 + 7 JUNO CHORUS B (128 positions, smoothed)
+                  chorus_block_b(1)]
     for m, b in enumerate(blocks):
         assert len(b) == 0x1000
         rom[m * 0x1000:(m + 1) * 0x1000] = b
@@ -573,20 +771,22 @@ if __name__ == '__main__':
         c = BR.Chip(rom); c.set_params(m, 0, 0)
         e = sum(abs(l) + abs(r) for l, r in (c.frame(9000 if i % 50 < 25 else -9000, 9000) for i in range(20000)))
         print('mode %d OFF energy %d' % (m, e))
-    for k, s in ((4, 0), (12, 2)):
-        c = BR.Chip(rom); c.set_params(2, (k & 1) * 4 + s, k >> 1)
-        resp = [c.frame(16000, 16000) if i == 0 else c.frame(0, 0) for i in range(3 * delay_frames(k) + 300)]
-        hits = [(i, l, r) for i, (l, r) in enumerate(resp) if abs(l) > 200 or abs(r) > 200]
-        print('DELAY k=%d fb=%d: expect L at %d, R at %d:' % (k, s, delay_frames(k), delay_frames(k) + 224), hits[:8])
+    if True:                                       # DELAY (mode 2)
+        for k, s in ((4, 0), (12, 2)):
+            c = BR.Chip(rom); c.set_params(2, (k & 1) * 4 + s, k >> 1)
+            resp = [c.frame(16000, 16000) if i == 0 else c.frame(0, 0) for i in range(3 * delay_frames(k) + 300)]
+            hits = [(i, l, r) for i, (l, r) in enumerate(resp) if abs(l) > 200 or abs(r) > 200]
+            print('DELAY k=%d fb=%d: expect L at %d, R at %d:' % (k, s, delay_frames(k), delay_frames(k) + 224), hits[:8])
     pad = GC.test_signal(4.0)
     pl = pluck_signal()
     GC.wav(os.path.join(OUT, '0_dry_pad.wav'), pad, pad)
     GC.wav(os.path.join(OUT, '0_dry_plucks.wav'), pl, pl)
-    GC.wav(os.path.join(OUT, '1_reverb_plate.wav'), *render(rom, pl, 0, 4, 6))
     GC.wav(os.path.join(OUT, '2_chorus_static.wav'), *render(rom, pad, 1, 4, 4))
     GC.wav(os.path.join(OUT, '2_chorus_I_moving.wav'), *GC.render_chip(GC.build_rom(stock), pad, 0.513))
     GC.wav(os.path.join(OUT, '3_delay_150ms_fb38.wav'), *render(rom, pl, 2, 4 + 1, 2))
     GC.wav(os.path.join(OUT, '3_delay_375ms_fb63.wav'), *render(rom, pl, 2, 0 + 2, 6))
+    for k, s_ in ((5, 1), (9, 3)):                 # RESONANT FILTER (mode 0): cutoff k, RESO s_
+        GC.wav(os.path.join(OUT, '1_filter_k%d_s%d.wav' % (k, s_)), *render(rom, pad, 0, (k & 1) * 4 + s_, k >> 1))
     for k, tone in ((4, 0), (10, 1), (14, 2), (15, 3)):
         c, d = CRUSH[k]
         GC.wav(os.path.join(OUT, '4_lofi_crush%d_drive%d_tone%d.wav' % (c, d, tone)),

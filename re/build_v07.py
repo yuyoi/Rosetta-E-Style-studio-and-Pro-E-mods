@@ -33,17 +33,17 @@ RAM = dict(RAMBASE=0x2DA6, EDIT=0x2E00, LVL=0x2E01, SEL=0x2E02, ROW=0x2E03, PART
            JOP=0x2E2D, JV=0x2E2E, JC=0x2E2F,
            FXT=0x3050, FXL=0x3058, FXM=0x3060, FXF=0x3061, FXLV=0x3062, TXN=0x3063, TXB=0x3064, WETP=0x306C,
            WETA=0x306F, RACT=0x3070, RCNT=0x3071, MBYTE=0x3072, PKF=0x3073, PKEY=0x3074, PKB=0x3075, RADR=0x3076,
-           RBUF=0x3078,
+           RBUF=0x3078, BMODE=0x309A, BSKIP=0x309B, BLAST=0x309C,   # v0.10 bender (RBUF 40 -> 34 bytes)
            LINE1=0x2E30, LINE2=0x2E40, WORK=0x2E50, HOOKBASE=0x2F50)
 assert RAM['WORK'] + 246 <= RAM['HOOKBASE']
-RBUFN = 40
+RBUFN = 34
 assert RAM['RBUF'] + RBUFN <= 0x30A2
 HW = dict(SHADOW=0x0A, LATCH=0x180D, PORTA=0x1000, BANKSEL=BANKSEL, ENTRY=CODE, BEAT=0x10, BEAT2=0x16,
           MIDIOUT=0xE84D, LCDWAIT=0xD5E9, LCDCMD=0xD611, LCDDATA=0x160E, RBUFN=RBUFN)
 FXSEG, FXSEG_END = 0x6800, 0xA000                 # v0.7: second code segment, free in both halves of bank 5
 
 # ---- menu data ----
-T_NUM, T_SGN, T_LIST, T_PCM, T_WAVE, T_PART, T_CLIST, T_RING, T_JUNO, T_PW, T_FX, T_WET = range(12)
+T_NUM, T_SGN, T_LIST, T_PCM, T_WAVE, T_PART, T_CLIST, T_RING, T_JUNO, T_PW, T_FX, T_WET, T_BEND = range(13)
 F_T, F_L, F_K, F_S = range(4)                     # FX fields: time, level, level*2 + time>>2, time & 3
 F_ABS, F_FIXP = 1, 2
 def _duty(pw):
@@ -63,9 +63,13 @@ LISTS = {
     'rate': ['0.25Hz', '0.4Hz', '0.5Hz', '0.7Hz', '0.9Hz', '1.5Hz', '3Hz', '6Hz'],
     'dms': ['%dms' % t for t in (40, 60, 80, 100, 120, 150, 180, 200, 230, 260, 300, 333, 375, 420, 460, 495)],
     'fb': ['0%', '38%', '63%', '75%'],
+    # v0.9: IC13 v8 mode 0 = RESONANT FILTER (gen_filter.py; Plate dropped): program = cutoff (16), sawBits = output + reso
+    'cut': [('%dHz' % f) if f < 1000 else ('%.1fk' % (f / 1000)) for f in [round(110 * 2 ** (k * 6.0 / 15)) for k in range(16)]],
+    'fres': ['LP', 'LP RES', 'BP', 'BP RES'],
+    'bendm': ['PITCH', 'CUTOFF', 'RESO'],         # v0.10: what the bender moves (CUTOFF / RESO = the DSP filter)
     'tone': ['OPEN', 'SOFT', 'DARK', 'DULL'],
-    'crush': [('%db' % (16 - c)) + ('DRV' if d else '') for c, d in [(0, 0), (0, 2), (2, 0), (2, 2), (3, 0), (3, 2), (4, 0),
-              (4, 2), (5, 0), (5, 2), (6, 0), (6, 2), (7, 0), (7, 2), (8, 0), (8, 2)]],
+    # v0.8: IC13 v7 mode 3 = LO-FI (programs 0-7 = gen_fx.LOFI_PICK, plain crush) + DRIVE (8-15 = DRIVE_PICK, x4 .. x512)
+    'crush': ['%db' % (16 - c) for c in (0, 2, 3, 4, 5, 6, 7, 8)] + ['DRIVE%d' % n for n in range(1, 9)],
     'wet': ['DRY', 'DRY+FX', 'FXONLY', 'TEST 3'],
     'pwmode': ['SQUARE'] + ['%d%%' % round(DUTY[pw - 50]) for pw in PWTAB[1:]],
     'range': ["16'", "8'", "4'", "2'"],
@@ -128,54 +132,58 @@ ITEMS = {
     'jpw':     it('PULSE W', T_JUNO, [LIST_IDS['pwmode']], len(PWTAB) - 1, 4),
     'jsub':    it('SUB OSC', T_JUNO, [255], 100, 3),
     'jdet':    it('DETUNE', T_JUNO, [255], 50, 5),
+    'jpwm':    it('PWM', T_JUNO, [255], 10, 7),          # v0.11: fake PWM = 2nd pulse 3 cents off, depth 0-10
     'jrange':  it('RANGE', T_JUNO, [LIST_IDS['range']], 3, 6),
     'pedepth': it('DEPTH', T_NUM, [PE_DEPTH]),
     'peamt':   it('AMOUNT', T_SGN, [PE_L0], aux=50),
     'petime':  it('TIME', T_NUM, [PE_T1]),
     'pevelo':  it('VELOCITY', T_NUM, [PE_VELO]),
     # v0.7 ROSETTA FX (IC13 modes; aux = mode, offs = [field, list id or 255])
-    'rvt':     it('TIME', T_FX, [F_T, 255], 7, 0),
-    'rvl':     it('LEVEL', T_FX, [F_L, 255], 7, 0),
-    'chr':     it('RATE', T_FX, [F_T, LIST_IDS['rate']], 7, 1),
-    'chd':     it('DEPTH', T_FX, [F_L, 255], 7, 1),
+    'rvt':     it('TIME', T_FX, [F_T, 255], 7, 1),          # v0.8: IC13 mode 1 = Roland's HALL
+    'rvl':     it('LEVEL', T_FX, [F_L, 255], 7, 1),
+    'chr':     it('RATE', T_FX, [F_T, LIST_IDS['rate']], 7, 6),   # v0.8: chorus B = IC13 mode 6 (IC28 v6, no redirect)
+    'chd':     it('DEPTH', T_FX, [F_L, 255], 7, 6),
     'dlt':     it('TIME', T_FX, [F_K, LIST_IDS['dms']], 15, 2),
     'dlf':     it('FEEDBACK', T_FX, [F_S, LIST_IDS['fb']], 3, 2),
-    'lfc':     it('CRUSH', T_FX, [F_K, LIST_IDS['crush']], 15, 3),
+    'fxc':     it('FX CUTOFF', T_FX, [F_K, LIST_IDS['cut']], 15, 0),     # v0.9: IC13 mode 0 = RESONANT FILTER
+    'fxq':     it('FX RESO', T_FX, [F_S, LIST_IDS['fres']], 3, 0),
+    'bend':    it('BENDER', T_BEND, [LIST_IDS['bendm']], 2, 0),
+    'lfc':     it('AMOUNT', T_FX, [F_K, LIST_IDS['crush']], 15, 3),
     'lft':     it('TONE', T_FX, [F_S, LIST_IDS['tone']], 3, 3),
     'flr':     it('RATE', T_FX, [F_T, LIST_IDS['rate']], 7, 4),
     'fld':     it('DEPTH', T_FX, [F_L, 255], 7, 4),
-    'drg':     it('GAIN', T_FX, [F_K, 255], 15, 5),
-    'drt':     it('TONE', T_FX, [F_S, LIST_IDS['tone']], 3, 5),
+    'drg':     it('RATE', T_FX, [F_T, LIST_IDS['rate']], 7, 5),   # v0.8: IC13 mode 5 = JUNO + REVERB (keys kept)
+    'drt':     it('DEPTH', T_FX, [F_L, 255], 7, 5),
     'wet':     it('PART FX', T_WET, [LIST_IDS['wet']], 3, 0),
     'weta':    it('ALL PARTS', T_WET, [LIST_IDS['wet']], 3, 1),
 }
 PG_ROWS = 10                         # page record = title 11 + live + count + 10 item indices + pad = 24 bytes
 PAGES = [  # (title, live, items): order = scroll order; BANK 1-8 jump to the first eight
-    ('JUNO', 0, ['jmake', 'jsaw', 'jpulse', 'jpw', 'jsub', 'jdet', 'jrange']),   # v0.6: Juno order, DCO first
+    ('JUNO', 0, ['jmake', 'jsaw', 'jpulse', 'jpw', 'jpwm', 'jsub', 'jdet', 'jrange']),   # v0.6: Juno order, DCO first
     ('FILTER', 0, ['cutoff', 'reso', 'envamt', 'fkeyf', 'fvelo']),
     ('ENVELOPE', 0, ['attack', 'decay', 'sustain', 'release']),
     ('PITCH ENV', 0, ['peamt', 'petime', 'pedepth', 'pevelo']),
     ('LFO', 0, ['lrate', 'ldepth', 'lmod']),
     ('VOICE', 0, ['st12', 'st34', 'ring12', 'ring34', 'lvl1', 'lvl2', 'lvl3', 'lvl4']),
     ('PCM WAVE', 0, ['pcm']),
-    ('LIVE FILTER', 1, ['cutoff', 'reso']),          # stays on NUMBER 8
+    ('LIVE FILTER', 1, ['cutoff', 'reso', 'fxc', 'fxq', 'bend']),   # stays on NUMBER 8; v0.9: + the DSP filter (PCM tones too)
     ('SYNTH OSC', 0, ['osc', 'pw', 'pwv']),
     ('PITCH', 0, ['tune', 'fine', 'wkeyf', 'bend']),
     ('AMP', 0, ['level', 'avelo']),
     ('PART', 0, ['part']),
-    ('REVERB', 0, ['rvt', 'rvl']),                   # v0.7 ROSETTA FX: one page per IC13 effect
+    ('HALL', 0, ['rvt', 'rvl']),                     # v0.7 ROSETTA FX: one page per IC13 effect (v0.8: SUPER FX)
     ('JUNO CHORUS', 0, ['chr', 'chd']),
     ('DELAY', 0, ['dlt', 'dlf']),
-    ('LO-FI', 0, ['lfc', 'lft']),
+    ('LOFI+DRIVE', 0, ['lfc', 'lft']),
     ('FLANGER', 0, ['flr', 'fld']),
-    ('DRIVE', 0, ['drg', 'drt']),
+    ('JUNO+REV', 0, ['drg', 'drt']),
     ('FX ROUTING', 0, ['wet', 'weta']),
 ]
-# FX defaults per mode (time, level): plate, Chorus I, 150 ms 38 %, 9 bits soft, flanger, gain 6, hall, room
-FXDEF = [(4, 5), (2, 4), (5, 2), (1, 4), (1, 6), (1, 3), (4, 5), (3, 4)]
+# FX defaults per mode (time, level): filter 1.3 kHz BP RES, hall, 150 ms 38 %, 11 bits soft, flanger, Juno+rev full, Chorus I, -
+FXDEF = [(7, 4), (4, 5), (5, 2), (1, 2), (1, 6), (2, 7), (2, 4), (3, 4)]
 # the PRO-E's own 8 reverb types (IC7 bank 0: names $6361, 11 bytes each; mode<<4|time $53C6, level $53CE)
-REV_TYPES = [('Plate 1', 0, 1, 6), ('Plate 2', 0, 3, 5), ('Juno I ', 1, 2, 4), ('Juno II', 1, 4, 5),
-             ('Delay 1', 2, 1, 2), ('Delay 2', 2, 2, 6), ('Lo-Fi 1', 3, 1, 4), ('Lo-Fi 2', 3, 6, 6)]
+REV_TYPES = [('Filter ', 0, 7, 4), ('Hall   ', 1, 5, 5), ('Juno   ', 6, 2, 4), ('Drive  ', 3, 1, 6),   # v0.8 SUPER FX
+             ('Delay  ', 2, 1, 2), ('Lo-Fi  ', 3, 1, 2), ('Flanger', 4, 1, 7), ('JunoRev', 5, 2, 7)]
 ITEM_KEYS = list(ITEMS)
 assert len(PAGES) <= 19
 
@@ -217,13 +225,19 @@ def tables_asm(pmax, dtone):
                 '        ' + text(label, 9)]
     out.append('PMAX:   db ' + ','.join(map(str, pmax)))
     out.append('listtab: dw ' + ','.join('list_%s' % k for k in LISTS))
+    out.append('dutytab: db ' + ','.join(str(round(d)) for d in DUTY))
+    out.append('fxdef: db ' + ','.join(str(t) for t, l in FXDEF) + ',' + ','.join(str(l) for t, l in FXDEF))
+    out.append('DEFTONE: db ' + ','.join(map(str, dtone)))
+    return '\n'.join(out) + '\n'
+
+
+def lists_asm():
+    """v0.9: the list strings live in the FX segment (same bank 5 window as the menu code): CODE is full"""
+    out = []
     for k, names in LISTS.items():
         out.append('list_%s:' % k)
         assert all(len(n) <= 6 for n in names), (k, names)
         out += ['        ' + 'db "%s"' % n.rjust(6) for n in names]
-    out.append('dutytab: db ' + ','.join(str(round(d)) for d in DUTY))
-    out.append('fxdef: db ' + ','.join(str(t) for t, l in FXDEF) + ',' + ','.join(str(l) for t, l in FXDEF))
-    out.append('DEFTONE: db ' + ','.join(map(str, dtone)))
     return '\n'.join(out) + '\n'
 
 
@@ -245,13 +259,13 @@ def build(ic7_base=None, ic4_base=None):
     ram_segs, ram_syms = A.assemble(open(os.path.join(HERE, 'synth_v07_ram.asm')).read(), dict(syms))
     tramp = bytes(ram_segs[RAM['RAMBASE']])
     hooks = bytes(ram_segs[RAM['HOOKBASE']])
-    assert ram_syms['HOOK_END'] <= 0x30A2, 'hooks run past the free RAM gap'
+    assert ram_syms['HOOK_END'] <= RAM['FXT'], 'hooks run into the FX variables at $%04X' % ram_syms['HOOK_END']
     assert ram_syms['TRAMP_END'] <= RAM['EDIT'], 'trampoline runs into the variables'
-    syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD')})
+    syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD', 'HBD')})
     syms.update(HOOK_LEN=len(hooks), TRAMP_LEN=len(tramp), CODE=CODE, NPAGES=len(PAGES), PGSIZE=24)
     src = (open(os.path.join(HERE, 'synth_v07.asm')).read() + tables_asm(ic28_partial_max(), deftone(lower))
            + 'TRAMP_IMG: db ' + ','.join(map(str, tramp)) + '\n' + 'HOOK_IMG: db ' + ','.join(map(str, hooks)) + '\n')
-    src += '        org %d\n' % FXSEG + open(os.path.join(HERE, 'synth_v07_fx.asm')).read()
+    src += '        org %d\n' % FXSEG + open(os.path.join(HERE, 'synth_v07_fx.asm')).read() + lists_asm()
     segs, csyms = A.assemble(src, syms)
     code = bytes(segs[CODE])
     fxcode = bytes(segs[FXSEG])
@@ -298,6 +312,8 @@ def build(ic7_base=None, ic4_base=None):
     hm, hd = syms['HMS'], syms['HMD']
     patch(lower, 0x4000, 0x9703, bytes.fromhex('f6268a'), bytes([0xBD, hm >> 8, hm & 0xFF]), 'MIDI IN status -> HMS')
     patch(lower, 0x4000, 0x9745, bytes.fromhex('145b40'), bytes([0xBD, hd >> 8, hd & 0xFF]), 'MIDI IN data -> HMD')
+    hb = syms['HBD']                                     # v0.10: bender A/D (B = raw) -> HBD, can skip the pitch bend
+    patch(lower, 0x4000, 0x551D, bytes.fromhex('f7266c'), bytes([0xBD, hb >> 8, hb & 0xFF]), 'bender -> HBD')
     o = 0x6361 - 0x4000
     assert lower[o:o + 11] == b'1 = Room 1 ', lower[o:o + 11]
     for n, (name, m, t, l) in enumerate(REV_TYPES):
@@ -306,7 +322,9 @@ def build(ic7_base=None, ic4_base=None):
         lower[0x53C6 - 0x4000 + n] = m << 4 | t
         lower[0x53CE - 0x4000 + n] = l
     assert ic4[0x2D48] == 0x00
-    lower[0x19E1:0x19E1 + 32] = b' ROSETTA  PRO-E ' + b' OS v0.7 JUNO FX'
+    banner = b' ROSETTA  PRO-E ' + b' OS v0.11 PWM   '
+    assert len(banner) == 32, 'banner must be 2 x 16 characters'
+    lower[0x19E1:0x19E1 + 32] = banner
     ic4[0x2DA8:0x2DA8 + 32] = b'ROSETTA OS PRO-E' + b'VER 00.51 110326'
     rs.bank_fix(lower)
 
