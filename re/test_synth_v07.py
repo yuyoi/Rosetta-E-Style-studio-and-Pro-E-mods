@@ -224,7 +224,7 @@ check(r.ram('SELP') == 0 and r.screen[0] == 'FILTER       ALL', 'NUMBER 5 = all'
 check(r.s.mem[0x10] & 0x0F == 0x0F and r.s.mem[0x16] & 0x0F == 0x0B, 'all: P2 LED blinks, the others steady')
 n = len(r.msgs)
 r.dial(1)
-check(len(dt1s(r, n)) == 3, 'all: macros skip the switched-off partial')
+check(len(dt1s(r, n)) == 4 and r.timbre[14 + 58 + B.TVF_CUT] == 68, 'all (v0.12): macros edit all four, the switched-off P2 too')
 r.key(0x39); r.key(0x39)                             # P2 back on
 check(r.timbre[0x0C] == 0x0F, 'P2 back on')
 r.key(0x3C)
@@ -317,7 +317,7 @@ r.key(0x41)
 r.key(0x5D)
 n = len(r.msgs)
 r.dial(2)
-check(len(dt1s(r, n)) == 2, 'muted partials are left alone')
+check(len(dt1s(r, n)) == 4, 'v0.12: ALL edits the muted partials too, so turning one on later matches')
 
 # ---------- no reply ----------
 r = Rig(reply=False)
@@ -419,6 +419,14 @@ check(all(t[P(p, B.TVF_CUT)] == cut1 and t[P(p, B.TVA_LEVEL)] == lvl1 for p in r
 check(all(t[P(p, B.PE_L0) + k] == 50 for p in range(4) for k in range(5)) and all(t[P(p, B.PE_DEPTH)] == 8 for p in range(4)),
       'pitch env flat, depth 8')
 check(all(t[P(p, B.WG_KEYF)] == 11 and t[P(p, B.WG_BEND)] == 1 for p in range(4)), 'key follow 1, bender on')
+wl = S['WORK'] + 14 + B.TVA_LEVEL                    # v0.12: a silent P1 (PWM STRING) must not give a silent Juno
+r.s.mem[wl] = 0
+r.dial(1)
+check(all(r.timbre[P(p, B.TVA_LEVEL)] == 100 for p in range(4)) and r.timbre[0x0C] == 0x01, 'MAKE JUNO forces P1 level 0 -> 100')
+r.s.mem[wl] = lvl1
+r.dial(1)
+check(all(r.timbre[P(p, B.TVA_LEVEL)] == lvl1 for p in range(4)), 'MAKE JUNO keeps a non-zero P1 level')
+t = r.timbre
 r.key(0x05)
 r.dial(1)                                            # SAW
 check(r.screen[1] == L('SAW', lvl1), 'SAW shows P1 level: %r' % (r.screen,))
@@ -502,8 +510,8 @@ check(r.screen == ('PITCH ENV    ALL', L('AMOUNT', 0)), 'PITCH ENV: %r' % (r.scr
 r.key(0x5D)
 n = len(r.msgs)
 r.dial(4)
-check([t[P(p, B.PE_L0)] for p in range(4)] == [58, 58, 58, 50] and len(dt1s(r, n)) == 3 and r.screen[1] == L('AMOUNT', '+8', 1),
-      'AMOUNT +8 on the partials that are on: %r' % (r.screen,))
+check([t[P(p, B.PE_L0)] for p in range(4)] == [58, 58, 58, 58] and len(dt1s(r, n)) == 4 and r.screen[1] == L('AMOUNT', '+8', 1),
+      'AMOUNT +8 on all four (v0.12): %r' % (r.screen,))
 r.key(0x05)
 r.dial(2)
 check(r.screen[1] == L('DEPTH', 8), 'DEPTH: %r' % (r.screen,))
@@ -681,6 +689,8 @@ r.midi(R(0x13, 3, 0, 0xA, 1, 7, 0xE))                # poke $30A1 = $7E
 check(r.s.mem[0x30A1] == 0x7E, 'poke')
 r.midi(R(0x13, 0xC, 0, 0, 0, 1, 2))                  # poke into ROM space: refused
 check(True, 'poke >= $4000 refused (no crash)')
+r.midi(R(0x14, 2, 0, 0, 5, 7, 0xE, 2))               # v0.13 page poke into page 2 $2005 (plain Rig: page bits ignored)
+check(r.latch == 0x00, 'page poke: latch back to page 0')
 n = len(r.msgs)
 msg = [0xF0, 0x41, 0x10, 0x16, 0x12, 0x03, 0x00, 0x26, 0x02, 0x55, 0xF7]
 r.midi(R(0x20, *[x for b in msg for x in (b >> 4, b & 0xF)]))
@@ -693,4 +703,89 @@ r.midi([0xF0, 0x43, 0x10, 0x22, 0x01, 0xF7])          # another maker's SysEx is
 r.midi([0xF0, 0x7D, 0x52, 0x22, 0x05, 0x7F, 0xF7])    # no 00 guard: refused
 check(r.mout == [], 'no 00 guard = not a remote command')
 check(r.mout == [], 'other SysEx ignored by the remote')
+
+# ---------- v0.13: USER PROGRAM tones in SRAM pages 2-3 ----------
+class PRig(Rig):
+    """Rig + the 4 SRAM pages behind $2000-$3FFF ($180D bits 0-1)."""
+    def __init__(self, **kw):
+        self.pages = {p: bytearray([0xFE]) * 0x2000 for p in range(4)}
+        self.page = 0
+        super().__init__(**kw)
+        self.pages[0][:] = self.s.mem[0x2000:0x4000]
+
+    def w_latch(self, v):
+        if hasattr(self, 'pages') and (v & 3) != self.page:
+            self.pages[self.page][:] = self.s.mem[0x2000:0x4000]
+            self.s.mem[0x2000:0x4000] = self.pages[v & 3]
+            self.page = v & 3
+        super().w_latch(v)
+
+
+r = PRig()
+r.boot()
+r.s.stop_at |= {0x9419, 0xFC67}
+m = r.s.mem
+m[0x2683], m[0x2678] = 3, 1                          # USER bank 2, number 3 = program 11 -> page 2, $2A00
+m[S['FXM']], m[S['FXT']], m[S['FXL']], m[S['BMODE']] = 0, 3, 4, 1
+saved = bytes(r.timbre)
+r.w_latch(0x00); m[0x0A] = 0x00
+pc = r.s.call(S['HST'])
+check(pc == 0x9419 and r.latch == 0x00 and r.pa & 0x40 == 0 and r.page == 0, 'WRITE + USER: on to stock $9419, bank / PA6 / page 0 back')
+rec = r.pages[2][0xA00:0xB00]
+check(rec[:2] == b'RT' and bytes(rec[2:248]) == saved and list(rec[248:252]) == [0, 3, 4, 1],
+      'store: RT + the SOLO tone read back + FX 0/3/4 + BENDER CUTOFF at page 2 $2A00')
+check(all(v == 0xFE for v in r.pages[2][:0xA00]) and all(v == 0xFE for v in r.pages[2][0xB00:])
+      and all(v == 0xFE for v in r.pages[1]) and all(v == 0xFE for v in r.pages[3]), 'store writes only its own record')
+r.timbre[:] = bytes(246)                             # the stock recall put a preset tone in
+m[S['FXM']], m[S['FXT']], m[S['FXL']], m[S['BMODE']] = 2, 0, 0, 0
+m[0x0C] |= 0x20                                      # REVERB ON
+n = len(r.msgs)
+pc = r.s.call(S['HRC'])
+check(pc == 0xFC67 and r.ram('PEND') == 11 and r.ram('PCNT') == 3 and len(r.msgs) == n,
+      'USER 2-3 recall: on to stock $FC67, send armed, nothing sent yet')
+m[0x2673] = 0x10
+r.s.call(S['HTK'])
+check(r.s.a == 0x10 and r.s.z == 0 and r.ram('PCNT') == 3, 'link scheduler: stock task pending = wait, A / Z = $2673')
+m[0x2673] = 0
+r.s.call(S['HTK']); r.s.call(S['HTK'])
+check(len(r.msgs) == n and r.s.a == 0 and r.s.z == 1, 'idle ticks count down, A = 0 / Z = 1 for the stock beq')
+r.s.call(S['HTK'])
+check(bytes(r.timbre) == saved, '3rd idle tick: the saved tone is back in the CK-34 (one DT1)')
+check(r.ram('PEND') == 0 and [m[S[k]] for k in ('FXM', 'FXT', 'FXL', 'BMODE')] == [0, 3, 4, 1], 'FX + BENDER mode back')
+check(r.sysx[-1] == bytes.fromhex('100001000304'), 'saved FX sent: %s' % r.sysx[-1].hex())
+check(r.latch == 0x00 and r.pa & 0x40 == 0 and r.page == 0 and r.s.a == 0 and r.s.z == 1, 'send: bank / PA6 / page / A / Z restored')
+k = len(r.sysx)
+r.s.call(S['HTK'])
+check(len(r.sysx) == k and r.s.z == 1, 'sent once only')
+m[0x2683] = 4
+r.s.call(S['HRC'])
+check(r.ram('PEND') == 0, 'a program without a saved tone arms nothing')
+m[0x2683] = 0
+r.s.call(S['HRC'])
+check(r.ram('PEND') == 0, 'no program selected arms nothing')
+m[0x2683], m[0x2678] = 8, 5
+r.s.call(S['HST'])
+m[0x2683], m[0x2678] = 1, 4
+r.s.call(S['HST'])
+check(r.pages[3][0xF00:0xF02] == b'RT' and r.pages[3][0:2] == b'RT' and all(v == 0xFE for v in r.pages[1]), 'program 48 = page 3 $2F00, program 33 = page 3 $2000, page 1 untouched')
+m[0x2683], m[0x2678] = 3, 1
+m[0x0C] &= ~0x20                                     # REVERB OFF: tone + bender come back, no FX message
+r.s.call(S['HRC'])
+for _ in range(3):
+    r.s.call(S['HTK'])
+check(len(r.sysx) == k and bytes(r.timbre) == saved, 'REVERB OFF: the tone comes back, the effect stays off')
+r2 = PRig(reply=False)
+r2.boot()
+r2.s.stop_at |= {0x9419}
+r2.s.mem[0x2683], r2.s.mem[0x2678] = 1, 0
+r2.s.call(S['HST'])
+check(all(v == 0xFE for v in r2.pages[2]), 'no RQ1 reply: nothing saved')
+r2.midi(R(0x14, 2, 3, 4, 5, 6, 0xB, 3))              # page poke: page 3 $2345 = $6B
+r2.midi(R(0x14, 2, 0, 0, 0, 1, 1, 1))                # page 1: refused
+r2.midi(R(0x14, 1, 0, 0, 0, 1, 1, 2))                # below $2000: refused
+check(r2.pages[3][0x345] == 0x6B and all(v == 0xFE for v in r2.pages[1]) and r2.s.mem[0x1000] != 0x11 and r2.page == 0,
+      'page poke writes page 2/3 only')
+r2.mout.clear()
+r2.midi(R(0x15, 2, 3, 4, 4, 3, 3))                   # page peek 3 bytes from page 3 $2344
+check(r2.mout[-8:] == [0x15, 0xF, 0xE, 6, 0xB, 0xF, 0xE, 0xF7], 'page peek: %r' % r2.mout[-8:])
 print('ALL OK, %d checks' % len(OK))

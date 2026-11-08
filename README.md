@@ -17,9 +17,10 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 > the real PRO-E. JSW also brought the MSL-15 dump and made the calls that found things: *"is 14 the last button?"*
 > (two hidden style banks) and *"the DAC demux is the same, the outs might just be disabled"* (extra outputs).
 
-![Rosetta E-Style Studio](docs/screenshot.png)
+![Rosetta OS // PRO-E Studio](docs/screenshot.png)
 
-*Styled after the PRO-E's front panel: the 4 × 8 MUSIC STYLE buttons, green backlit LCD, style library on the right.*
+*Rosetta OS // PRO-E Studio v0.2: styles, long samples and the whole Rosetta firmware, patched onto your own dumps and
+burned on a T48. More: [SAMPLES tab](docs/img/studio_samples.png) · [FIRMWARE tab](docs/img/studio_firmware.png).*
 
 🎧 **Listen:** [▶️ play it on the project page](https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/#listen) · [MP3](docs/audio/roland-pro-e-rosetta-os-juno-chorus-resonant-filter-jam.mp3): JSW jamming the PRO-E, Juno chorus + resonant DSP filter
 (2 min 35 s, recorded straight from her outputs; the filter, bender and PWM firmware are all in this repo now, OS v0.11).
@@ -33,7 +34,9 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 | **Any TN-SC1 card style → an internal slot** | pick from all 16 MSL-15 cards (~68 styles), byte-checked against the original card data |
 | **OS text** | your own boot banner and version screen |
 | **SYNTH EDIT** | press CURSOR: tone editing on her own panel, 19 pages (Juno, filter, envelope, pitch env, LFO, voice, waves, live filter, effects…), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
-| **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel. **PWM** knob (0-10): real pulse-width modulation, an LFO in IC28 rewrites the LA chip's pulse width, LFO RATE sets the speed. `tools/juno_patch.py strings` loads a Juno PWM string patch |
+| **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel. **PWM** knob (0-10): real pulse-width modulation, an LFO in IC28 rewrites the LA chip's pulse width; turn **LFO DEPTH** up, LFO RATE sets the speed. ALL edits all four partials. `tools/juno_patch.py strings` loads a Juno PWM string patch |
+| **USER PROGRAM tones** | the 48 USER PROGRAM buttons now hold a full synth tone too: **WRITE + USER n** saves the panel plus the SOLO tone, its effect (mode, time, level) and the BENDER mode into battery RAM; **USER n** brings it all back. `tools/user_tones.py` loads 16 Juno patches (brass, pads, PWM strings, leads, basses, wah stab, techno arp). The composer is gone to make room (its 3 song pages hold the tones) |
+| **Long samples** | your own sounds in the wave ROMs: up to **4.10 s per slot at full rate, 8 s at half rate (16 kHz), 16 s at quarter rate**, pitched back so they play at real speed and pitch. An 8 s song clip plays from an SFX pad, others from PCM WAVE 2-n in SYNTH EDIT, all through the resonant filter. The drum kit stays stock. SAMPLES tab in the Studio |
 | **Live filter** | cutoff and resonance changes reach notes you're holding (IC28 build), so filter sweeps work like a real knob |
 | **Resonant filter** | a state-variable filter running *on the Boss reverb chip* (IC13 mode 0): LP, LP RES, BP, BP RES, 110 Hz-7 kHz in 16 steps. Filters everything sent to the effect, PCM samples too. LIVE FILTER page: FX CUTOFF / FX RESO |
 | **BENDER mode** | PITCH / CUTOFF / RESO: the bender sweeps the resonant filter instead of the pitch. Bandpass + bender = a wah |
@@ -41,7 +44,7 @@ CM-32L voice board inside). Build it in one app and burn it straight to a T48 pr
 | **ROSETTA FX** | new programs for her Boss reverb chip (IC13): a moving **Juno chorus** (the full Juno-60 sweep, 128 positions, no clicks), **delay** 40-495 ms with feedback, **lo-fi** bit crush, **drive**, **flanger**, **Juno chorus + reverb** (D-50 style), the resonant filter, plus Roland's hall. Per-part routing keeps the drums dry. [re/REVERB_CHIP.md](re/REVERB_CHIP.md) |
 | **MIDI remote** | `tools/proe_link.py`: press her keys, turn the dial and read her screen from a PC, and record her through an audio interface. Every effect above was measured on her this way |
 | **Pin-31 mod** | one wire through a sacrificial socket: the CPU switches IC7's two halves, so the full 512 KB of a W27C040 is usable. [docs/PIN31_MOD.md](docs/PIN31_MOD.md) |
-| **Build + burn** | W27C040 (IC7), W27C512 (IC4, IC28, IC13) images: ID check, write, verify, readback. Drop-in, no board mods (except SYNTH EDIT) |
+| **Build + burn** | the Studio patches your own dumps: W27C040 (IC7, IC37, IC38), W27C512 (IC4, IC28, IC13). Every burn: chip ID check, backup read of the old chip, write, verify, readback. Drop-in, no board mods (except the OS: pin-31 mod) |
 
 Every build checks itself before it writes anything: every kept style must decode to exactly its stock events,
 every imported style must match its source pattern by pattern, and all IC7 bank checksums must add up.
@@ -59,13 +62,23 @@ The internal-slot mods (IC7/IC4) are PRO-E specific. The E-20/E-10 share the PRO
 ## Quick start (from source, Windows)
 
 1. Python 3.10+ and `pip install -r romstudio/requirements.txt`.
-2. **Dump your own chips** into `dumps/` (see [dumps/README.md](dumps/README.md)). No Roland ROM data is in this repo.
-   The app needs IC7 (style ROM) and IC4 (OS EPROM) of a PRO-E v2.00. An MSL-15 or any TN-SC1 card dump goes in `dumps_ext/`.
-3. `romstudio/run_romstudio.bat`.
-4. **STYLES:** click a slot, double-click a style in the library. Rename it, set the tempo, or Restore stock.
-   **OS TEXT:** banner and version screen. **BUILD**, then **BURN IC7 / IC4** (minipro + T48: put `minipro.exe` on PATH,
-   in `Documents/tools/minipro_win/`, or set `PROE_MINIPRO`).
-5. Put the burned chip in her socket, notch the same way. Keep your original chips: putting them back = stock.
+2. **Dump your own chips** (see [dumps/README.md](dumps/README.md)). No Roland ROM data is in this repo.
+   Styles need IC7 + IC4; the full firmware needs IC28 + IC13 too; samples need IC37 + IC38. An MSL-15 or any TN-SC1
+   card dump goes in `dumps_ext/`.
+3. `romstudio/run_romstudio.bat` opens **Rosetta OS // PRO-E Studio**.
+4. **FIRMWARE:** *Import ROM dumps* (pick your files: the Studio checks each one by SHA-1 and files the PRO-E v2.00 chips
+   in `dumps/`). Tick what to patch: **Rosetta OS v0.13** (IC7 + IC4, needs the [pin-31 mod](docs/PIN31_MOD.md)),
+   **CK-34 v8.1** (IC28), **ROSETTA FX v8.2c** (IC13).
+   The OS needs room in style bank 5: stock BIG BAND, COUNTRY and WALTZ1 live there. Put other styles in those slots
+   (MSL-15, your MIDI) or click *Make room for the OS*.
+5. **STYLES:** click a slot, double-click a style in the library. Rename it, set the tempo, or Restore stock.
+   **OS TEXT:** banner (and the version screen when the OS is off).
+6. **SAMPLES:** drop WAVs on the list. Pick which wave each one replaces (wave #128 is an SFX pad), the rate (auto picks
+   full / half / quarter so it fits a 4.10 s slot) and the root note. *Play as she will* plays them decoded back out of
+   the built ROMs.
+7. **BUILD ALL**, then **BURN** each chip (minipro + T48: put `minipro.exe` on PATH, in `Documents/tools/minipro_win/`,
+   or set `PROE_MINIPRO`). Every burn saves the old chip content to `build/studio/backups/` first.
+8. Put the burned chip in her socket, notch the same way. Keep your original chips: putting them back = stock.
 
 ### Make a style from MIDI
 
@@ -108,8 +121,9 @@ Planned, roughly in order ([ROADMAP.md](ROADMAP.md)):
 - **TN-SC1 card adapter:** burn song styles onto a card for any E-series.
 - **LFO block in IC28:** PWM is done. Next: LFO → filter, delayed vibrato, and the mod wheel as a second filter axis.
 - **D-50 flavour:** the PRO-E has the D-50's LA chip. D-50 style LFOs, chorus + reverb and the famous D-50 patches as presets.
-- **SYNTH EDIT save slots** on the WRITE key.
-- **Rosetta Wave:** custom samples in IC37/IC38 plus the wave/loop table in IC28 (long-sample bank built, being tested).
+- **Arpeggiator:** hold a chord, it plays up / down / up-down / random on SOLO, locked to the arranger clock.
+- **Patch menu:** the PATCH buttons stop overwriting the SOLO tone; the BANK / NUMBER tone buttons open SYNTH EDIT pages.
+- **Drum samples:** a real (metal) drum kit in place of the stock one, from the SAMPLES tab.
 - **Extra outputs:** after the wet-only mod the SYN1 dry signal is free: tap IC18 pin 1 / IC2 pin 7 (through a cap, then a small TL072 buffer board) for outs 3-4. Being tested.
 
 ## Legal

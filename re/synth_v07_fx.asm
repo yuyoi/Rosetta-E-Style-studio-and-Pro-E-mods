@@ -542,6 +542,10 @@ rxtab:  db $01
         dw rx_peek
         db $13
         dw rx_poke
+        db $14
+        dw rx_ppk
+        db $15
+        dw rx_ppe
         db $20
         dw rx_ck
         db $7F
@@ -550,3 +554,229 @@ rxtab:  db $01
 rhdr:   db $F0,$7D,$52
 pingtx: db "RO07",0
 wetadr: db $26,$16,$06          ; patch temp reverb switch of SOLO / LOWER / M.BASS
+
+; ---------------- v0.13: USER PROGRAM tones ----------------
+; Each of the 48 USER PROGRAMs (bank 1-6 x 1-8) gets a 256-byte record in SRAM pages 2-3 (the composer's old songs
+; 2 + 3; the composer is gone, page 1 is left alone because boot still reads its header): "RT", the SOLO timbre temp (246 bytes), FX mode, its time, its level, BENDER mode.
+; WRITE + USER n: the stock store, then the SOLO tone is read back from the CK-34 (RQ1) and saved with the FX.
+; USER n: the stock recall arms PEND; when the stock link queue is empty (HTK) the tone goes out as one DT1 and the
+; FX + bender come back, so nothing stock overwrites them.
+UPMAG0  = $52                   ; 'R'
+UPMAG1  = $54                   ; 'T'
+uprog:  cmpa #6
+        beq up_arm
+        bcs up_st
+        jmp up_snd
+up_st:  jsr upidx               ; ---- store ----
+        bcs up_x
+        clr PARTIX              ; SOLO
+        jsr readtone
+        tst VALID
+        beq up_x                ; no reply: keep the old record
+        ldx PB2
+        ldaa #UPMAG0
+        jsr pgwr
+        inx
+        ldaa #UPMAG1
+        jsr pgwr
+        inx
+        ldy #WORK
+us_lp:  ldaa 0,y
+        jsr pgwr
+        inx
+        iny
+        cpy #WORK+246
+        bne us_lp
+        ldaa FXM
+        jsr pgwr
+        inx
+        ldy #FXT
+        ldab FXM
+        aby
+        ldaa 0,y
+        jsr pgwr
+        inx
+        ldaa 8,y
+        jsr pgwr
+        inx
+        ldaa BMODE
+        jsr pgwr
+up_x:   clc
+        rts
+up_arm: clr PEND                ; ---- recall: arm only a slot that holds a tone ----
+        jsr upidx
+        bcs up_x
+        ldx PB2
+        jsr pgrd
+        cmpa #UPMAG0
+        bne up_x
+        inx
+        jsr pgrd
+        cmpa #UPMAG1
+        bne up_x
+        ldaa UIDX
+        staa PEND
+        ldaa #3                 ; 3 idle scheduler ticks (60 ms) after the stock queue empties
+        staa PCNT
+        clc
+        rts
+up_snd: ldaa PEND               ; ---- send (link idle) ----
+        clr PEND
+        jsr upix2
+        bcc ur_go
+ur_x:   clc
+        rts
+ur_go:
+        ldx PB2
+        inx
+        inx
+        ldy #WORK
+ur_lp:  jsr pgrd
+        staa 0,y
+        inx
+        iny
+        cpy #WORK+246
+        bne ur_lp
+        jsr pgrd
+        anda #$07
+        staa FXM
+        inx
+        ldy #FXT
+        ldab FXM
+        aby
+        jsr pgrd
+        staa 0,y
+        inx
+        jsr pgrd
+        staa 8,y
+        inx
+        jsr pgrd
+        cmpa #3
+        bcs ur_bm
+        clra
+ur_bm:  staa BMODE
+        ldaa #$FF
+        staa BLAST              ; the next bend sends
+        clr PARTIX
+        ldx #devtab
+        ldaa 0,x
+        staa DEV
+        jsr dtall               ; the tone, one DT1
+        ldaa $0C                ; REVERB ON: the saved effect (stock sent its own type before; this one wins)
+        bita #$20
+        beq ur_x
+        ldx #FXT
+        ldab FXM
+        abx
+        jsr fxsend
+        clc
+        rts
+
+; program index from the stock state (= $F3E7): $2683 = number 1-8 (0 = none), $2678 = bank 0-5
+upidx:  ldaa $2683
+        beq ui_bad
+        ldab $2678
+        aslb
+        aslb
+        aslb
+        aba
+upix2:  staa UIDX               ; A = index 1-48 -> UPG = page 2/3, PB2 = $2000 + 256 * ((index - 1) & 31)
+        tsta
+        beq ui_bad
+        cmpa #49
+        bcc ui_bad
+        deca
+        tab
+        andb #$1F
+        addb #$20
+        stab PB2
+        clr PB2+1
+        lsra
+        lsra
+        lsra
+        lsra
+        lsra
+        adda #2
+        staa UPG
+        clc
+        rts
+ui_bad: sec
+        rts
+
+; A = byte at X in SRAM page UPG (interrupts held off while the page is switched; keeps X, Y)
+pgrd:   tpa
+        psha
+        sei
+        ldab SHADOW
+        andb #$FC
+        orab UPG
+        stab LATCH
+        ldaa 0,x
+        ldab SHADOW
+        stab LATCH
+        staa TMP
+        pula
+        tap
+        ldaa TMP
+        rts
+; store A at X in SRAM page UPG (keeps A, X, Y)
+pgwr:   staa TMP
+        tpa
+        psha
+        sei
+        ldaa TMP
+        ldab SHADOW
+        andb #$FC
+        orab UPG
+        stab LATCH
+        staa 0,x
+        ldab SHADOW
+        stab LATCH
+        pula
+        tap
+        ldaa TMP
+        rts
+
+; v0.13: tone pages 2-3 over the remote (load / back up USER PROGRAM tones from the PC)
+rx_ppk: jsr raddr               ; $14: addr (4 nibbles), value (2), page (1) -> SRAM page 2/3 $2000-$3FFF
+        ldaa RBUF+11
+        cmpa #2
+        bcs rq_no
+        cmpa #4
+        bcc rq_no
+        staa UPG
+        ldd RADR
+        cmpa #$20
+        bcs rq_no
+        cmpa #$40
+        bcc rq_no
+        ldaa RBUF+9
+        asla
+        asla
+        asla
+        asla
+        oraa RBUF+10
+        ldx RADR
+        jmp pgwr
+rx_ppe: jsr raddr               ; $15: addr (4 nibbles), count (1-32), page (1) -> reply like peek
+        ldaa RBUF+10
+        cmpa #2
+        bcs rq_no
+        cmpa #4
+        bcc rq_no
+        staa UPG
+        ldab RBUF+9
+        beq rq_no
+        cmpb #32
+        bhi rq_no
+        stab TXN
+        jsr rhead
+rq_lp:  ldx RADR
+        jsr pgrd
+        jsr rnib
+        inx
+        stx RADR
+        dec TXN
+        bne rq_lp
+        jmp rtail
+rq_no:  rts

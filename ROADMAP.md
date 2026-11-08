@@ -1,8 +1,9 @@
 # Rosetta OS PRO-E roadmap
 
-Status 2026-11-06: v0.1 (text), v0.2 (hidden MSL-15 banks), v0.3 (songs from MIDI), v0.4d SYNTH EDIT, **v0.6 JUNO mode**
-and **v0.7 JUNO FX** (effect pages + MIDI remote) work on hardware, with IC28 (live filter + moving chorus) and IC13
-(ROSETTA FX: Juno chorus, delay, lo-fi, drive, flanger) burned and measured on her.
+Status 2026-11-08: everything up to **OS v0.13** (USER PROGRAM tones, composer removed), **IC28 v8.1** (PWM LFO,
+wet-only routing), **IC13 v8.2c** (ROSETTA FX + resonant filter) and the **LONG2 sample bank** (8 s at half rate on an
+SFX pad) works on her. **PRO-E Studio v0.2** builds all of it from your own dumps; its click test rebuilds the four
+firmware chips in her byte for byte.
 
 1. **v0.1**: banner/version text only, proves patch -> burn -> boot. DONE.
 2. **Synth mode**: DONE ([re/SYNTH_EDIT.md](re/SYNTH_EDIT.md)): v0.4d SYNTH EDIT, v0.6 JUNO page, v0.7 effect pages + MIDI remote.
@@ -10,10 +11,14 @@ and **v0.7 JUNO FX** (effect pages + MIDI remote) work on hardware, with IC28 (l
    - DONE: cutoff on held notes (IC28 live filter), moving Juno chorus (IC28 stepper + IC13).
    - Next: **LFO block in IC28** (PWM, LFO -> filter, delayed vibrato), then **D-50 flavour** (same LA chip as the D-50:
      D-50 style LFOs, chorus + reverb program, the famous D-50 patches as presets, no separate mode).
-   - Then: a couple of save slots in a submenu on the WRITE key.
-   - ROM Studio has to keep lower bank 5 $A000-$B668 free for the SYNTH code twin.
+   - DONE v0.12/v0.13: MAKE JUNO forces a level, ALL edits all four partials, WRITE + USER n saves the SOLO tone + FX +
+     BENDER mode, USER n recalls it (SRAM pages 2-3, the old composer songs).
+   - Next: **ARPEGGIATOR** (hold a chord, up / down / up-down / random on SOLO, arranger clock), then the PATCH buttons ->
+     own patch menu (a stray PATCH press overwrites the SOLO tone) and the BANK / NUMBER tone buttons -> SYNTH EDIT pages.
+   - The Studio keeps bank 5 $6800-$7400 and $A000-$B668 free for the OS code (stock BIG BAND, COUNTRY, WALTZ1 live there).
 3. **Style tool**: DONE (ROM Studio + MIDI Style Maker). Next: automatic section detection.
-4. **Custom samples = Rosetta Wave port from the D-110 tool** (user: small change, same LA32/HN62304). Changes: write the wave table to IC28 $8100 (CM-32L 4-byte entries) instead of the D-110 location; IC37 = lower 512 KB, IC38 = upper; tone names in IC7 bank 0 $64D9 if waves/tones are renamed. First check: the D-110 tool's scramble unscrambles IC38 into clean samples (Munt order table).
+4. **Custom samples: DONE (LONG2 on her, PRO-E Studio SAMPLES tab).** Next: **a real drum kit** (realistic / metal
+   drums, not the U-110 card sounds) in place of the stock kit waves. Original plan: **Rosetta Wave port from the D-110 tool** (user: small change, same LA32/HN62304). Changes: write the wave table to IC28 $8100 (CM-32L 4-byte entries) instead of the D-110 location; IC37 = lower 512 KB, IC38 = upper; tone names in IC7 bank 0 $64D9 if waves/tones are renamed. First check: the D-110 tool's scramble unscrambles IC38 into clean samples (Munt order table).
 5. **RAM card as extra memory** (user idea 2026-11-03, RAM cards, not ROM): battery-backed and writable, so content can be loaded over MIDI without burning anything (custom styles, data, maybe code). The OS already uses RAM cards for songs/user programs and banks the card into the $4000-$BFFF window (latch $180D bit 3, values $08/$0C), and the card bus is CA0-CA19 (block diagram), so up to 1 MB of address lines. Stock TN-SC1 style cards are 32 KB ROMs with a 12-byte header (check at $D4A3/$D513). Plan: the new OS loads styles/data into a RAM card (via MIDI dump or a PC tool) and banks it in like a style ROM card. A bigger home-made SRAM card (milled PCB, Hex Wizard style) could add far more than the stock size. To find first: how the card's upper address bits (CA15+) are driven, which card sizes the OS accepts, and the card connector pinout.
 5b. **BOSS reverb DSP: DONE as ROSETTA FX (2026-11-06)**, see [re/REVERB_CHIP.md](re/REVERB_CHIP.md). Original plan: Goal: own DSP programs (delay/chorus first, distortion only if the DSP clips/saturates), so effects can replace reverb pages. Lab pipeline: mutation builder (page + experiment -> W27C512 image, logged, minipro burn) -> fixed MIDI test signal into MIDI IN -> Scarlett capture -> automatic IR/decay/spectrum diff vs stock -> lab notebook (opcode/coefficient map). Inputs: IC13 4 x 8 KB pages + D-110 reverb ROM for diffing. User per round: swap the chip, say go. Starts after v0.1 boots. Live lo-fi/distortion in parallel: AND-gate bitcrush on the LA32->PCM54 bus + analog drive stage after the DAC, latch-bit switched (check whether that bus is parallel first).
 6. Parked, wave expansion: the card slot can't feed the LA32 (the wave ROMs sit on the CK-34's own bus). Better: a big flash (2-4 MB) on an IC37/38 adapter with spare address lines as a bank switch = several switchable wave sets. Stretch: SRAM in place of the wave ROMs plus a loader = sampler mode (slow to load at 31250 baud, ~5 min/MB).

@@ -34,6 +34,7 @@ RAM = dict(RAMBASE=0x2DA6, EDIT=0x2E00, LVL=0x2E01, SEL=0x2E02, ROW=0x2E03, PART
            FXT=0x3050, FXL=0x3058, FXM=0x3060, FXF=0x3061, FXLV=0x3062, TXN=0x3063, TXB=0x3064, WETP=0x306C,
            WETA=0x306F, RACT=0x3070, RCNT=0x3071, MBYTE=0x3072, PKF=0x3073, PKEY=0x3074, PKB=0x3075, RADR=0x3076,
            RBUF=0x3078, BMODE=0x309A, BSKIP=0x309B, BLAST=0x309C,   # v0.10 bender (RBUF 40 -> 34 bytes)
+           PEND=0x309D, PCNT=0x309E, UPG=0x309F, UIDX=0x30A0,     # v0.13 USER PROGRAM tones
            LINE1=0x2E30, LINE2=0x2E40, WORK=0x2E50, HOOKBASE=0x2F50)
 assert RAM['WORK'] + 246 <= RAM['HOOKBASE']
 RBUFN = 34
@@ -249,7 +250,11 @@ def patch(img, base, addr, old, new, what):
     print(f'  patched ${addr:04X} {what}: {old.hex()} -> {new.hex()}')
 
 
-def build(ic7_base=None, ic4_base=None):
+OS_VERSION = 'v0.13'
+
+
+def build(ic7_base=None, ic4_base=None, banner=None, version=None):
+    """banner / version: 32-byte boot banner (IC7) and version screen (IC4); None = the Rosetta OS defaults."""
     lower = bytearray(open(ic7_base or os.path.join(BUILD, 'IC7_v0.3b_W27C040.bin'), 'rb').read()[:0x40000])
     ic4 = bytearray(open(ic4_base or os.path.join(BUILD, 'IC4_v0.3b_W27C512.bin'), 'rb').read()[:0x4000])
     b5 = BANK * 0x8000
@@ -261,7 +266,8 @@ def build(ic7_base=None, ic4_base=None):
     hooks = bytes(ram_segs[RAM['HOOKBASE']])
     assert ram_syms['HOOK_END'] <= RAM['FXT'], 'hooks run into the FX variables at $%04X' % ram_syms['HOOK_END']
     assert ram_syms['TRAMP_END'] <= RAM['EDIT'], 'trampoline runs into the variables'
-    syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD', 'HBD')})
+    syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD', 'HBD',
+                                         'HST', 'HRC', 'HTK')})
     syms.update(HOOK_LEN=len(hooks), TRAMP_LEN=len(tramp), CODE=CODE, NPAGES=len(PAGES), PGSIZE=24)
     src = (open(os.path.join(HERE, 'synth_v07.asm')).read() + tables_asm(ic28_partial_max(), deftone(lower))
            + 'TRAMP_IMG: db ' + ','.join(map(str, tramp)) + '\n' + 'HOOK_IMG: db ' + ','.join(map(str, hooks)) + '\n')
@@ -314,6 +320,26 @@ def build(ic7_base=None, ic4_base=None):
     patch(lower, 0x4000, 0x9745, bytes.fromhex('145b40'), bytes([0xBD, hd >> 8, hd & 0xFF]), 'MIDI IN data -> HMD')
     hb = syms['HBD']                                     # v0.10: bender A/D (B = raw) -> HBD, can skip the pitch bend
     patch(lower, 0x4000, 0x551D, bytes.fromhex('f7266c'), bytes([0xBD, hb >> 8, hb & 0xFF]), 'bender -> HBD')
+    # v0.13: USER PROGRAM tones (store / recall in IC4, link-idle send in IC7 bank 0)
+    hs, hr, ht = syms['HST'], syms['HRC'], syms['HTK']
+    patch(ic4, 0xC000, 0xF4DD, bytes.fromhex('7e9419'), bytes([0x7E, hs >> 8, hs & 0xFF]), 'WRITE + USER store end -> HST')
+    patch(ic4, 0xC000, 0xF57E, bytes.fromhex('7efc67'), bytes([0x7E, hr >> 8, hr & 0xFF]), 'USER recall end -> HRC')
+    patch(lower, 0x4000, 0x51C4, bytes.fromhex('b62673'), bytes([0xBD, ht >> 8, ht & 0xFF]), 'link scheduler idle -> HTK')
+    # v0.13: composer gone (user 2026-11-08: never used), so nothing stock writes the tone pages 2-3
+    # (map: fw_map agent report 2026-11-08). Demo songs keep working (they never touch pages 1-3).
+    patch(lower, 0x4000, 0x9057, bytes.fromhex('1210402d'), bytes.fromhex('135d802c'), 'PLAY outside demo -> rts')
+    patch(ic4, 0xC000, 0xF7A8, bytes.fromhex('7efc90'), bytes.fromhex('7efc88'), 'REC / PUNCH key -> rts')
+    patch(ic4, 0xC000, 0xF908, bytes.fromhex('7ee522'), bytes.fromhex('7ef8d4'), 'footswitch PUNCH -> rts')
+    patch(lower, 0x4000, 0x92CF, bytes.fromhex('1f0b08ad'), bytes.fromhex('20af0101'), 'TRACK ERASE mode off')
+    patch(ic4, 0xC000, 0xD8D0, bytes.fromhex('13104075'), bytes.fromhex('135d8075'), 'song tick: demo only')
+    patch(ic4, 0xC000, 0xD7F5, bytes.fromhex('130e8034'), bytes.fromhex('20360101'), 'no song recording (1)')
+    patch(ic4, 0xC000, 0xD832, bytes.fromhex('130e80f7'), bytes.fromhex('20f90101'), 'no song recording (2)')
+    patch(ic4, 0xC000, 0xE544, bytes.fromhex('18'), bytes.fromhex('39'), 'no punch')
+    patch(ic4, 0xC000, 0xDA34, bytes.fromhex('c6'), bytes.fromhex('39'), 'factory reset keeps the tone pages')
+    for a in (0x9398, 0x93CE):
+        patch(lower, 0x4000, a, bytes.fromhex('bdd3c8'), bytes.fromhex('010101'), 'card song load off')
+    patch(lower, 0x4000, 0x93C9, bytes.fromhex('bdd30f'), bytes.fromhex('010101'), 'card single-song load off')
+    patch(lower, 0x4000 - 0x8000, 0xB62C, bytes.fromhex('c603'), bytes.fromhex('c600'), 'test-mode RAM test: page 0 only')
     o = 0x6361 - 0x4000
     assert lower[o:o + 11] == b'1 = Room 1 ', lower[o:o + 11]
     for n, (name, m, t, l) in enumerate(REV_TYPES):
@@ -322,10 +348,11 @@ def build(ic7_base=None, ic4_base=None):
         lower[0x53C6 - 0x4000 + n] = m << 4 | t
         lower[0x53CE - 0x4000 + n] = l
     assert ic4[0x2D48] == 0x00
-    banner = b' ROSETTA  PRO-E ' + b' OS v0.11 PWM   '
-    assert len(banner) == 32, 'banner must be 2 x 16 characters'
+    banner = banner or b' ROSETTA  PRO-E ' + b' OS v0.13 PROGS '
+    version = version or b'ROSETTA OS PRO-E' + b'VER 00.51 110326'
+    assert len(banner) == 32 and len(version) == 32, 'banner / version must be 2 x 16 characters'
     lower[0x19E1:0x19E1 + 32] = banner
-    ic4[0x2DA8:0x2DA8 + 32] = b'ROSETTA OS PRO-E' + b'VER 00.51 110326'
+    ic4[0x2DA8:0x2DA8 + 32] = version
     rs.bank_fix(lower)
 
     up = bytearray(lower)

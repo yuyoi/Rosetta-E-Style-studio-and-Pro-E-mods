@@ -27,6 +27,9 @@ MINIPRO = _find_minipro()
 
 BAROQUE = rs.BAROQUE
 CARD_SIZE = 0x8000
+# IC7 bank 5 areas the Rosetta OS needs (re/build_v07.py): FX segment $6800 (2.3 KB used in v0.13, room to grow) and the
+# SYNTH code $A000-$B668. Stock BIG BAND, COUNTRY and WALTZ1 sit there.
+SYNTH_RESERVE = ((5, 0x6800, 0x7400), (5, 0xA000, 0xB668))
 BANNER_OFF, BANNER_STOCK = 0x19E1, b'  ROLAND PRO-E  INTELL. ARRANGER'       # IC7 bank 0, 2 x 16 chars
 VERSION_OFF, VERSION_STOCK = 0x2DA8, b'  ROLAND PRO E  VER 02.00 051289'      # IC4, 2 x 16 chars
 
@@ -123,6 +126,16 @@ class Project:
         self.tempos = [s.tempo for s in self.stock]
         self.banner = [' ROSETTA  PRO-E ', '  OS v0.3 2026  ']
         self.version = ['ROSETTA OS PRO-E', 'VER 00.30 110326']
+        self.reserve = False             # True = keep bank 5 $A000-$B668 free for the Rosetta OS (SYNTH) code
+
+    def synth_blockers(self):
+        """slots whose stock patterns sit in the Rosetta OS code area (stock: COUNTRY + WALTZ1). Put other styles
+        there and the area is freed."""
+        doc = rs.decode(self.stock_ic7)
+        inside = {k for k, p in doc['patterns'].items() for rb, ra, re_ in SYNTH_RESERVE
+                  if p['bank'] == rb and p['addr'] < re_ and p['addr'] + p['size'] > ra}
+        return [n for n, s in enumerate(self.slots) if s.source == 'stock'
+                and {f'{b}:{p:04X}' for b, p in s.refs().values() if p < 0xC000} & inside]
 
     # ---- edits (Baroque is locked) ----
     def assign(self, slot, style):
@@ -174,7 +187,11 @@ class Project:
         holes = []
         for b in sorted(free):
             for s, e in _merge(free[b]):
-                holes.append([b, s, e])
+                parts = [(s, e)]
+                for rb, ra, re_ in (SYNTH_RESERVE if self.reserve else ()):     # keep the Rosetta OS code areas empty
+                    if b == rb:
+                        parts = [(x, y) for s2, e2 in parts for x, y in ((s2, min(e2, ra)), (max(s2, re_), e2)) if y > x]
+                holes += [[b, x, y] for x, y in parts]
         need = sum(s.size() for s in {x.key: x for x in self.slots if x.source != 'stock'}.values())
         return freed, holes, need
 
@@ -224,6 +241,12 @@ class Project:
         assert img[BANNER_OFF:BANNER_OFF + 32] == BANNER_STOCK
         img[BANNER_OFF:BANNER_OFF + 32] = fit16(self.banner[0]) + fit16(self.banner[1])
         rs.bank_fix(img)
+        if self.reserve:
+            for rb, ra, re_ in SYNTH_RESERVE:
+                o = rb * 0x8000 + ra - 0x4000
+                if any(x != 0xFF for x in img[o:o + re_ - ra]):
+                    names = ', '.join(f'BANK {n // 8 + 1} no.{n % 8 + 1} {self.names[n]}' for n in self.synth_blockers())
+                    raise RuntimeError(f'Rosetta OS needs IC7 bank 5 ${ra:04X}-${re_:04X} free. Put other styles into: {names}')
         ic4 = bytearray(self.stock_ic4)
         assert ic4[VERSION_OFF:VERSION_OFF + 32] == VERSION_STOCK
         ic4[VERSION_OFF:VERSION_OFF + 32] = fit16(self.version[0]) + fit16(self.version[1])
@@ -304,7 +327,9 @@ def write_images(ic7, ic4, out_dir, tag):
 
 
 # ---- T48 via minipro ----
-CHIPS = {'IC7': ('W27C040', 0xDA86), 'IC4': ('W27C512@DIP28', 0xDA08)}
+CHIPS = {'IC7': ('W27C040', 0xDA86), 'IC4': ('W27C512@DIP28', 0xDA08), 'IC28': ('W27C512@DIP28', 0xDA08),
+         'IC13': ('W27C512@DIP28', 0xDA08), 'IC37': ('W27C040', 0xDA86), 'IC38': ('W27C040', 0xDA86)}
+BURN_MIN = {'W27C040': 3.5, 'W27C512@DIP28': 1}
 
 
 def _minipro(args, timeout=600):
@@ -321,14 +346,25 @@ def chip_id(which):
     return got, got == want, out
 
 
-def burn(which, image_path, log=print):
-    """ID check -> erase/write/verify -> readback compare. Returns True only if the chip == image."""
+def burn(which, image_path, log=print, backup_dir=None):
+    """ID check -> backup read of what's on the chip -> erase/write/verify -> readback compare.
+    Returns True only if the chip == image."""
     dev, want = CHIPS[which]
     got, ok, out = chip_id(which)
     if not ok:
         log(f'chip ID {got and hex(got)} is not {want:#x} ({dev}): not burning.\n{out}')
         return False
-    log(f'{which}: {dev} found (ID {got:#x}). Writing... (~3 min for IC7)')
+    if backup_dir:
+        import time
+        os.makedirs(backup_dir, exist_ok=True)
+        bk = os.path.join(backup_dir, f'{which}_before_{time.strftime("%Y%m%d_%H%M%S")}.bin')
+        _minipro(['-p', dev, '-r', bk])
+        if os.path.exists(bk):
+            log(f'{which}: old chip content saved to {bk} (md5 {hashlib.md5(open(bk, "rb").read()).hexdigest()[:8]})')
+        else:
+            log(f'{which}: backup read FAILED: not burning.')
+            return False
+    log(f'{which}: {dev} found (ID {got:#x}). Writing, ~{BURN_MIN.get(dev, 3)} min, don\'t pull the chip...')
     code, out = _minipro(['-p', dev, '-w', image_path])
     if 'Verification OK' not in out:
         keep = [l for l in out.splitlines() if not re.search(r'Writing\s+Code\.\.\.\s+\d+%|Reading\s+Code\.\.\.\s+\d+%', l)]

@@ -94,8 +94,11 @@ entry:  tsta
         bne e_m4
         jmp tick                ; (v0.7b: out of branch range now)
 e_m4:   cmpa #4
-        bne e_midi
+        bne e_m5
         jmp bend                ; v0.10: A = 4 bender, B = raw A/D
+e_m5:   cmpa #5
+        bcs e_midi
+        jmp uprog               ; v0.13: A = 5 store / 6 recall / 7 send (USER PROGRAM tones)
 e_midi: jmp midi               ; v0.7: A = 2 MIDI status / 3 MIDI data, B = the byte (remote control)
 e_key:  ldaa EDIT
         bne inedit
@@ -445,7 +448,7 @@ itemptr: jsr pageptr            ; IT = X = item record of (SEL, ROW)
         rts
 
 ; MASK = partials the item IT edits, REFP = the one shown. Fixed-partial item: that one. One partial selected: that one
-; (even when switched off). All: the partials that are on (none on = all four), shown = the lowest.
+; (even when switched off). All: all four (v0.12), shown = the lowest one that is on.
 actmask: ldx IT
         ldab IT_FLAGS,x
         andb #F_FIXP
@@ -462,12 +465,13 @@ am_one: deca
         ldaa 0,x
         staa MASK
         rts
-am_all: ldaa WORK+$0C
+am_all: ldaa #$0F                ; v0.12: ALL = all four partials, on or off (a partial turned on later matches)
+        staa MASK
+        ldaa WORK+$0C           ; shown = the lowest partial that is on (none on = P1)
         anda #$0F
         bne am1
         ldaa #$0F
-am1:    staa MASK
-        clrb
+am1:    clrb
 am2:    lsra
         bcs am3
         incb
@@ -1325,7 +1329,11 @@ jmake:  tst DELTA               ; MAKE JUNO: dial right
         bgt jm_go
         rts
 jm_go:
-        ldx #WORK+14            ; P1 -> P2, P3, P4
+        ldaa WORK+14+TVA_LEVEL  ; v0.12: P1 silent (e.g. a PWM-only patch) -> level 100, else the Juno is silent
+        bne jm_lv
+        ldaa #100
+        staa WORK+14+TVA_LEVEL
+jm_lv:  ldx #WORK+14            ; P1 -> P2, P3, P4
         ldy #WORK+14+58
 jm_cp:  ldaa 0,x
         staa 0,y

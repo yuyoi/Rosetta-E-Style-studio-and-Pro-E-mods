@@ -33,10 +33,12 @@ img7 = open(os.path.join(HERE, '..', 'build', 'IC7_v0.10_W27C040.bin'), 'rb').re
 t = bytearray(B.deftone(img7[:0x40000]))
 assert len(t) == 246
 
-name = {'brass': b'JUNO BRASS', 'pad': b'JUNO PAD  ', 'brass2': b'JUNO BRS 2', 'brass3': b'JUNO BRS 3', 'pwm': b'JUNO PWM  ', 'strings': b'PWM STRING'}[VOICE]
+name = {'brass': b'JUNO BRASS', 'pad': b'JUNO PAD  ', 'brass2': b'JUNO BRS 2', 'brass3': b'JUNO BRS 3', 'pwm': b'JUNO PWM  ', 'strings': b'PWM STRING',
+        'stab': b'PWM STAB  '}[VOICE]
+STRINGS = VOICE in ('strings', 'stab')   # stab = PWM STRING with a fast attack + filter punch, PWM 10
 t[0:10] = name
 t[10], t[11] = 0, 0                  # S+S, S+S (no ring)
-t[12] = 0b0110 if VOICE == 'strings' else 0b1101 if VOICE in ('brass2', 'brass3') else 0b0111   # brass2: P1 saw, P3 sub, P4 detuned saw (no pulse)
+t[12] = 0b0110 if STRINGS else 0b1101 if VOICE in ('brass2', 'brass3') else 0b0111   # brass2: P1 saw, P3 sub, P4 detuned saw (no pulse)
 t[13] = 0                            # sustain env mode
 
 KEYF_3_4 = 9                         # TVF key follow list index 9 = 3/4
@@ -51,16 +53,19 @@ for p in range(4):
     if VOICE == 'pwm':               # REAL PWM (IC28 v8): P2 pulse, PWM depth 6 ($76), saw + sub underneath
         wave, coarse, pw, lvl = [(1, 36, 0, 45), (0, 36, 0, 95), (0, 24, 0, 50), (1, 36, 0, 0)][p]
         t[o + B.WG_PCM] = 0x76 if p == 1 else 0
-    if VOICE == 'strings':           # classic Juno PWM strings: pulse only + a little sub, PWM 7, slow LFO
+    if STRINGS:                      # classic Juno PWM strings: pulse only + a little sub, PWM 7, slow LFO
         wave, coarse, pw, lvl = [(1, 36, 0, 0), (0, 36, 0, 100), (0, 24, 0, 25), (1, 36, 0, 0)][p]
-        t[o + B.WG_PCM] = 0x77 if p == 1 else 0
+        t[o + B.WG_PCM] = (0x7A if VOICE == 'stab' else 0x77) if p == 1 else 0
     t[o + B.WG_KEYF] = 11            # 1 = normal tracking
     t[o + B.WG_BEND] = 1
     t[o + B.WG_WAVE] = wave          # 0 = square / pulse, 1 = saw (synth partial)
     t[o + B.WG_PW] = pw
     t[o + B.PE_DEPTH] = 0            # no pitch envelope
-    t[o + B.LFO_RATE], t[o + B.LFO_DEPTH], t[o + B.LFO_MOD] = ({'pwm': 20, 'strings': 10}.get(VOICE, 70)), 0, 15   # LFO RATE = PWM speed
-    if VOICE == 'strings':
+    t[o + B.LFO_RATE], t[o + B.LFO_DEPTH], t[o + B.LFO_MOD] = ({'pwm': 20, 'strings': 10, 'stab': 20}.get(VOICE, 70)), (100 if VOICE in ('pwm', 'strings', 'stab') else 0), 15   # LFO DEPTH 100 = the user's working PWM (2026-11-08)   # LFO RATE = PWM speed
+    if VOICE == 'stab':                           # fast attack, filter punch that settles, medium release
+        cut, res, env, ft, fl = 40, 5, 55, [1, 35, 45, 45, 40], [100, 60, 50, 45]
+        at, al = [1, 30, 40, 40, 40], [100, 90, 85, 80]
+    elif VOICE == 'strings':
         cut, res, env, ft, fl = 48, 3, 25, [40, 60, 60, 60, 60], [100, 85, 80, 75]
         at, al = [45, 50, 50, 50, 65], [100, 100, 100, 100]
     elif VOICE == 'pwm':
@@ -94,6 +99,6 @@ for i in range(0, 246, 3):
     a = base + i
     lk.dt1([0x04, a >> 7, a & 0x7F], list(t[i:i + 3]))
     time.sleep(0.012)
-lk.fx(6, 4, 5) if VOICE == 'strings' else lk.fx(6, 2, 4)   # JUNO CHORUS II for the strings, else I
+lk.fx(6, 4, 5) if STRINGS else lk.fx(6, 2, 4)   # JUNO CHORUS II for the strings, else I
 lk.dt1([0x03, 0x00, 0x26], [1])      # SOLO part FX on
-print('loaded %s into SOLO + Juno chorus I' % name.decode())
+print('loaded %s into SOLO + Juno chorus %s' % (name.decode(), 'II' if STRINGS else 'I'))

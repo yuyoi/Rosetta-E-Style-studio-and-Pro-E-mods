@@ -132,4 +132,24 @@ HBD2:    tst BSKIP
          ins                     ; drop the return to $5520
          ins
 HBDX:    rts
+; ---- v0.13: USER PROGRAM tones. IC4 $F4DD (end of WRITE + USER n) and $F57E (end of a USER n recall) jmp here;
+; the SYNTH code saves / arms the slot, then FAR continues at the stock target. IC7 bank 0 $51C4 (link scheduler,
+; ldaa $2673) jsr HTK: when no stock link task is pending, an armed recall sends its tone + FX (selector 7).
+HST:     ldaa #5
+         ldx #$9419
+         jmp FAR
+HRC:     ldaa #6
+         ldx #$FC67
+         jmp FAR
+HTK:     ldaa $2673              ; the replaced instruction: every exit reloads it, so the stock beq sees A / Z
+         bne HTKX
+         tst PEND
+         beq HTKX
+         dec PCNT
+         bne HTKX
+         ldaa #7
+         ldx #HTKX
+         jmp FAR
+HTKX:    ldaa $2673
+         rts
 HOOK_END:

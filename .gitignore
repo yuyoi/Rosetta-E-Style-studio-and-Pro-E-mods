@@ -21,3 +21,6 @@ midi_in/
 re/fw_map/*.txt
 __pycache__/
 *.pyc
+*.wav
+proe_wave_config.json
+romstudio/screenshot*.png
