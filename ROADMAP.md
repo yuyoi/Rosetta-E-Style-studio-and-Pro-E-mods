@@ -1,6 +1,6 @@
 # Rosetta OS PRO-E roadmap
 
-Status 2026-11-08: everything up to **OS v0.13** (USER PROGRAM tones, composer removed), **IC28 v8.1** (PWM LFO,
+Status 2026-11-08: everything up to **OS v0.14** (ARPEGGIATOR; v0.13 USER PROGRAM tones, composer removed), **IC28 v8.1** (PWM LFO,
 wet-only routing), **IC13 v8.2c** (ROSETTA FX + resonant filter) and the **LONG2 sample bank** (8 s at half rate on an
 SFX pad) works on her. **PRO-E Studio v0.2** builds all of it from your own dumps; its click test rebuilds the four
 firmware chips in her byte for byte.
@@ -13,7 +13,8 @@ firmware chips in her byte for byte.
      D-50 style LFOs, chorus + reverb program, the famous D-50 patches as presets, no separate mode).
    - DONE v0.12/v0.13: MAKE JUNO forces a level, ALL edits all four partials, WRITE + USER n saves the SOLO tone + FX +
      BENDER mode, USER n recalls it (SRAM pages 2-3, the old composer songs).
-   - Next: **ARPEGGIATOR** (hold a chord, up / down / up-down / random on SOLO, arranger clock), then the PATCH buttons ->
+   - DONE v0.14: **ARPEGGIATOR** (SYNTH EDIT page 20: UP / DOWN / UPDOWN / RANDOM, 1-3 octaves, 1/4-1/32, LATCH; SOLO notes
+     via $42CB, the 24 PPQN arranger tick via $A118). Next: the PATCH buttons ->
      own patch menu (a stray PATCH press overwrites the SOLO tone) and the BANK / NUMBER tone buttons -> SYNTH EDIT pages.
    - The Studio keeps bank 5 $6800-$7400 and $A000-$B668 free for the OS code (stock BIG BAND, COUNTRY, WALTZ1 live there).
 3. **Style tool**: DONE (ROM Studio + MIDI Style Maker). Next: automatic section detection.

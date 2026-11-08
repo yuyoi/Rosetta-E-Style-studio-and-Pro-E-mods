@@ -177,15 +177,15 @@ check(r.key(0x5D), 'CURSOR on the main screen opens SYNTH EDIT')
 check(r.ram('EDIT') == 1 and r.ram('VALID') == 1, 'tone read back (RQ1 reply parsed)')
 check(r.msgs[0] == bytes.fromhex('f041031611020000000176' + '07f7'), 'RQ1 to SOLO (device 03)')
 check(bytes(r.s.mem[S['WORK']:S['WORK'] + 246]) == bytes(r.timbre), 'WORK = CK-34 timbre temp')
-check(r.screen == ('SYNTH EDIT  SOLO', 'JUNO        1/19'), 'page list screen: %r' % (r.screen,))
+check(r.screen == ('SYNTH EDIT  SOLO', 'JUNO        1/20'), 'page list screen: %r' % (r.screen,))
 check(r.s.mem[0x10] & 0xF0 == 0x40 and r.s.mem[0x10] & 0x0F == 0x0F and r.s.mem[0x16] & 0x0F == 0x0F,
       'all selected: 4 tempo LEDs steady, other bits of $10 kept (%02X/%02X)' % (r.s.mem[0x10], r.s.mem[0x16]))
 check(r.s.mem[0x2662] == 0x0D and r.s.mem[0x5E] & 0x40, 'page $0D borrowed')
 check(r.s.mem[0x2D64] == 0xFF, 'TRANSPOSE hold timer left idle')
 r.dial(1)
-check(r.screen[1] == 'FILTER      2/19', 'dial scrolls pages: %r' % (r.screen,))
+check(r.screen[1] == 'FILTER      2/20', 'dial scrolls pages: %r' % (r.screen,))
 r.dial(20)
-check(r.ram('SEL') == 18 and r.screen[1] == 'FX ROUTING 19/19', 'scroll clamps at the last page: %r' % (r.screen,))
+check(r.ram('SEL') == 19 and r.screen[1] == 'ARPEGGIO   20/20', 'scroll clamps at the last page: %r' % (r.screen,))
 r.dial(-20)
 check(r.ram('SEL') == 0, 'scroll clamps at the first page')
 r.dial(1)
@@ -296,7 +296,7 @@ check(r.ram('LVL') == 2 and r.screen[0] == 'LIVE FILTER  ALL' and r.screen[1].st
 # ---- PART: re-read for LOWER ----
 r.key(0x05); r.key(0x05)
 r.dial(20)
-r.dial(-7)
+r.dial(-8)                                           # v0.14: ARPEGGIO is the last page now
 r.key(0x5D); r.key(0x5D)
 n = len(r.msgs)
 r.dial(1)
@@ -398,7 +398,7 @@ L = lambda label, val, ed=False: label.ljust(9) + ('>' if ed else ' ') + str(val
 r = Rig()
 r.boot()
 r.key(0x5D)
-check(r.screen == ('SYNTH EDIT  SOLO', 'JUNO        1/19'), 'JUNO is page 1: %r' % (r.screen,))
+check(r.screen == ('SYNTH EDIT  SOLO', 'JUNO        1/20'), 'JUNO is page 1: %r' % (r.screen,))
 r.key(0x40)                                          # NUMBER 1 = JUNO
 check(r.screen == ('JUNO         ALL', L('MAKE JUNO', 'TURN >')), 'MAKE JUNO row: %r' % (r.screen,))
 r.key(0x5D)
@@ -538,8 +538,8 @@ r = Rig()
 r.boot()
 r.key(0x5D)
 r.dial(20)
-r.dial(-6)                                           # page 13 = HALL (v0.8)
-check(r.screen[1] == 'HALL       13/19', 'HALL page: %r' % (r.screen,))
+r.dial(-7)                                           # page 13 = HALL (v0.8; v0.14 ARPEGGIO is page 20)
+check(r.screen[1] == 'HALL       13/20', 'HALL page: %r' % (r.screen,))
 r.key(0x5D)
 check(r.screen == ('HALL         ALL', L('TIME', 4)), 'HALL TIME default 4: %r' % (r.screen,))
 r.key(0x5D)
@@ -675,7 +675,7 @@ r.midi(R(0x03, 64 + 3))                              # dial +3
 check(r.s.mem[0x53] == 53, 'remote dial moves the dial value (%d)' % r.s.mem[0x53])
 r.w_latch(0x00); r.s.mem[0x0A] = 0x00
 r.s.call(S['RAMTICK'])                               # her next 20 ms page tick reads it
-check(r.screen[1] == 'PITCH ENV   4/19', 'remote dial +3 scrolls 3 pages: %r' % (r.screen,))
+check(r.screen[1] == 'PITCH ENV   4/20', 'remote dial +3 scrolls 3 pages: %r' % (r.screen,))
 r.mout = []
 r.midi(R(0x10))                                      # screen dump
 txt = bytes((r.mout[4 + 2 * i] << 4) | r.mout[5 + 2 * i] for i in range(32)).decode()
@@ -788,4 +788,160 @@ check(r2.pages[3][0x345] == 0x6B and all(v == 0xFE for v in r2.pages[1]) and r2.
 r2.mout.clear()
 r2.midi(R(0x15, 2, 3, 4, 4, 3, 3))                   # page peek 3 bytes from page 3 $2344
 check(r2.mout[-8:] == [0x15, 0xF, 0xE, 6, 0xB, 0xF, 0xE, 0xF7], 'page peek: %r' % r2.mout[-8:])
+
+# ---------- v0.14: ARPEGGIATOR (SOLO notes via HAR at $42CB, 24 PPQN tick via ATK at $A118) ----------
+r = Rig()
+r.boot()
+s = r.s
+s.mem[0x2400] = 0xE4                                 # SOLO part on (level byte bit 7)
+s.mem[0x2670] = 1                                    # velocity as played
+s.stop_at.add(0xA164)
+check([r.ram(k) for k in ('ARPM', 'ARPR', 'ARPO', 'ARPL', 'ARPC')] == [0, 3, 0, 0, 0], 'boot: ARP off, 1/16, 1 OCT, no latch')
+check(bytes(img7[0x42CB - 0x4000:0x42CE - 0x4000]) == bytes([0xBD, S['HAR'] >> 8, S['HAR'] & 0xFF]), '$42CB jsr HAR')
+check(bytes(img7[0xA118 - 0x4000:0xA11C - 0x4000]) == bytes([0xBD, S['ATK'] >> 8, S['ATK'] & 0xFF, 0x01]), '$A118 jsr ATK + nop')
+check(img7[0x40000 + 0x42CB - 0x4000:0x40000 + 0xA11C - 0x4000] == img7[0x42CB - 0x4000:0xA11C - 0x4000], 'upper half twin has the hooks')
+
+
+def note(k, v, midi=False):
+    r.tx = []
+    r.w_latch(0x00); r.pa = 0x00; r.map(); s.mem[0x0A] = 0x00
+    if midi:                                         # MIDI IN SOLO note: $62.0 set, no key map
+        s.mem[0x62] |= 1
+    else:                                            # keyboard: $445B updated her held map $248C before $42CB
+        s.mem[0x62] &= ~1
+        i, b = 0x248C + ((k >> 3) & 15), 1 << (k & 7)
+        s.mem[i] = (s.mem[i] | b) if v else (s.mem[i] & ~b)
+    s.a, s.b = k, v
+    pc = s.call(S['HAR'])
+    check(pc == 0xFFFE and r.pa & 0x40 == 0 and r.latch == 0x00, 'HAR: returns, PA6 + bank restored')
+    return list(r.tx)
+
+
+def tick(run=True):
+    r.tx = []
+    r.w_latch(0x00); r.pa = 0x00; r.map(); s.mem[0x0A] = 0x00
+    s.mem[0x10] = (s.mem[0x10] | 0x40) if run else (s.mem[0x10] & ~0x40)
+    s.a, s.x = 0x11, 0x2233
+    pc = s.call(S['ATK'])
+    check(r.pa & 0x40 == 0 and r.latch == 0x00 and s.a == 0x11 and s.x == 0x2233, 'ATK: PA6 + bank restored, A X kept')
+    return pc, list(r.tx)
+
+
+def ons(n):                                          # n ticks -> [(tick, note)] note-ons, [(tick, note)] note-offs
+    on, off = [], []
+    for t in range(1, n + 1):
+        _, tx = tick()
+        for i in range(0, len(tx), 3):
+            (on if tx[i + 2] else off).append((t, tx[i + 1]))
+    return on, off
+
+
+check(note(60, 100) == [0x93, 60, 100] and note(60, 0) == [0x93, 60, 0], 'ARP OFF: SOLO notes go straight out')
+check(tick() == (0xFFFE, []), 'ARP OFF: tick sends nothing, $10.6 set -> back to $A11C')
+check(tick(run=False)[0] == 0xA164, 'tick with $10.6 clear -> $A164 (the replaced brclr)')
+# the page: last one, dial all the way right
+r.key(0x5D)
+r.dial(30)
+check(r.ram('SEL') == 19 and r.screen[1] == 'ARPEGGIO   20/20', 'ARPEGGIO = page 20/20: %r' % (r.screen,))
+r.key(0x5D)
+check(r.screen == ('ARPEGGIO     ALL', L('MODE', 'OFF')), 'ARPEGGIO page: %r' % (r.screen,))
+r.key(0x5D, press=False)
+r.key(0x5D)
+r.tx = []
+r.dial(1)
+check(r.screen[1] == L('MODE', 'UP', 1) and r.ram('ARPM') == 1, 'MODE UP: %r' % (r.screen,))
+check(r.tx == [0xB3, 0x7B, 0x00], 'MODE change sends ALL NOTES OFF on SOLO: %r' % r.tx)
+r.key(0x05)
+r.dial(1)
+check(r.screen[1] == L('RATE', '1/16'), 'RATE row, default 1/16: %r' % (r.screen,))
+r.dial(1)
+check(r.screen[1] == L('RANGE', '1 OCT'), 'RANGE row: %r' % (r.screen,))
+r.dial(1)
+check(r.screen[1] == L('LATCH', 'OFF'), 'LATCH row: %r' % (r.screen,))
+# UP, 3 keys, 1/16 = 6 ticks a step, gate 3 ticks
+check(note(64, 90) == [] and note(60, 80) == [] and note(67, 70) == [], 'ARP on: held keys make no sound by themselves')
+check(list(s.mem[S['ARPN']:S['ARPN'] + 3]) == [60, 64, 67] and r.ram('ARPC') == 3, 'held list sorted: 60 64 67')
+check(note(64, 90) == [] and r.ram('ARPC') == 3, 'a key twice stays once')
+on, off = ons(19)
+check(on == [(1, 60), (7, 64), (13, 67), (19, 60)], 'UP 1/16: a note every 6 ticks from the next tick: %r' % on)
+check(off == [(4, 60), (10, 64), (16, 67)], 'gate: off half a step later: %r' % off)
+check(r.ram('ARPVL') == 90, 'velocity = the last key down')
+s.mem[S['ARPR']] = 1                                 # 1/8
+s.mem[S['ARPO']] = 1                                 # 2 octaves
+s.mem[S['ARPI']] = 0xFF; s.mem[S['ARPT']] = 1; s.mem[S['ARPG']] = 0
+on, _ = ons(12 * 6)
+check([n_ for _, n_ in on] == [60, 64, 67, 72, 76, 79], '2 OCT UP 1/8: %r' % on)
+check([t for t, _ in on] == [1, 13, 25, 37, 49, 61], '1/8 = 12 ticks')
+s.mem[S['ARPM']] = 2
+s.mem[S['ARPI']] = 0xFF; s.mem[S['ARPT']] = 1
+on, _ = ons(12 * 6)
+check([n_ for _, n_ in on] == [79, 76, 72, 67, 64, 60], 'DOWN: %r' % on)
+s.mem[S['ARPM']] = 3
+s.mem[S['ARPO']] = 0
+s.mem[S['ARPI']] = 0xFF; s.mem[S['ARPT']] = 1
+on, _ = ons(12 * 8)
+check([n_ for _, n_ in on] == [60, 64, 67, 64, 60, 64, 67, 64], 'UPDOWN (no repeat at the ends): %r' % on)
+s.mem[S['ARPM']] = 4
+s.mem[S['ARPO']] = 2
+on, _ = ons(12 * 40)
+got = {n_ for _, n_ in on}
+check(len(on) == 40 and got <= {60, 64, 67, 72, 76, 79, 84, 88, 91} and len(got) >= 6, 'RANDOM over 3 OCT: %r' % sorted(got))
+s.mem[S['ARPM']] = 1
+s.mem[S['ARPO']] = 0
+s.mem[S['ARPR']] = 5                                 # 1/32 = 3 ticks, gate 1
+s.mem[S['ARPI']] = 0xFF; s.mem[S['ARPT']] = 1; s.mem[S['ARPG']] = 0
+tick()
+on, off = ons(6)
+check(on == [(3, 64), (6, 67)] and off == [(1, 60), (4, 64)], '1/32: 3 ticks a step, gate 1 tick: %r %r' % (on, off))
+# key up without latch: the note leaves the list; last key up stops the sound
+note(60, 0); note(67, 0)
+check(list(s.mem[S['ARPN']:S['ARPN'] + 1]) == [64] and r.ram('ARPC') == 1 and r.ram('ARPQ') == 2,   # 64 was pressed twice
+      'key up: out of the list: %r' % list(s.mem[S['ARPN']:S['ARPN'] + 3]))
+s.mem[S['ARPS']] = 64
+check(note(64, 0) == [0x93, 64, 0] and r.ram('ARPC') == 0 and r.ram('ARPS') == 0, 'last key up: the sounding note stops')
+check(ons(30) == ([], []), 'nothing held: silent')
+# LATCH: the list stays after the keys are up; a new chord after all keys were up replaces it
+s.mem[S['ARPL']] = 1
+note(62, 100); note(65, 100)
+note(62, 0); note(65, 0)
+check(r.ram('ARPC') == 2 and r.ram('ARPQ') == 0, 'LATCH: notes stay after key up')
+check({n_ for _, n_ in ons(30)[0]} == {62, 65}, 'LATCH: keeps playing')
+note(70, 100)
+check(list(s.mem[S['ARPN']:S['ARPN'] + r.ram('ARPC')]) == [70], 'LATCH: a key after all were up starts a new list')
+note(72, 100)
+check(list(s.mem[S['ARPN']:S['ARPN'] + r.ram('ARPC')]) == [70, 72], 'LATCH: keys while one is held add to it')
+for k in range(80, 90):
+    note(k, 100)
+check(r.ram('ARPC') == 8 and list(s.mem[S['ARPN']:S['ARPN'] + 8]) == [70, 72, 80, 81, 82, 83, 84, 85], 'list stops at 8 notes')
+s.mem[S['ARPO']] = 2
+s.mem[S['ARPM']] = 1
+s.mem[S['ARPI']] = 22; s.mem[S['ARPT']] = 1; s.mem[S['ARPG']] = 0
+on, _ = ons(1)
+check(on == [(1, 85 + 24)], '3 OCT: the 24th step = top note + 2 octaves: %r' % on)
+s.mem[S['ARPN'] + 7] = 110                           # 110 + 24 = 134 -> folds back to 110
+s.mem[S['ARPI']] = 22; s.mem[S['ARPT']] = 1; s.mem[S['ARPG']] = 0
+on, _ = ons(1)
+check(on == [(1, 110)], 'top notes fold back under 121: %r' % on)
+# MODE OFF from the page: list cleared, all notes off, notes pass straight through again
+r.dial(-3)
+r.key(0x5D)
+r.tx = []
+r.dial(-10)
+check(r.ram('ARPM') == 0 and r.ram('ARPC') == 0 and r.ram('ARPQ') == 0 and r.tx[:3] == [0xB3, 0x7B, 0x00],
+      'MODE OFF: list cleared + ALL NOTES OFF: %r %r' % (r.screen, r.tx))
+check(note(48, 99) == [0x93, 48, 99], 'ARP OFF again: straight through')
+note(48, 0)
+# MIDI IN notes on SOLO (no key map): each key up takes only its own note out
+s.mem[S['ARPM']] = 1
+s.mem[S['ARPL']] = 0
+note(50, 100, midi=True); note(53, 100, midi=True); note(57, 100, midi=True)
+note(53, 0, midi=True)
+check(list(s.mem[S['ARPN']:S['ARPN'] + r.ram('ARPC')]) == [50, 57], 'MIDI IN key up: only that note leaves')
+note(50, 0, midi=True); note(57, 0, midi=True)
+check(r.ram('ARPC') == 0, 'MIDI IN: all up = empty')
+# keyboard: a stale note (mono mode can swallow a key up before $42CB) is cleared when her key map is empty
+note(40, 100); note(43, 100)
+s.mem[0x248C:0x249C] = bytes(16)                     # both keys up, but only one key-up reached $42CB
+s.mem[S['ARPS']] = 43
+check(note(40, 0) == [0x93, 43, 0] and r.ram('ARPC') == 0 and r.ram('ARPQ') == 0, 'empty key map: list cleared, no hanging note')
 print('ALL OK, %d checks' % len(OK))

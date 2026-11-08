@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Roland PRO-E Mods: Rosetta OS with Juno mode, Juno chorus and styles from MIDI</title>
-<meta name="description" content="Roland PRO-E (Pro-E, Pro E) mods by Rosetta: custom firmware with a Juno mode for the LA synth engine, a moving Juno chorus, delay, lo-fi and drive on its reverb chip, SYNTH EDIT on the panel and new arranger styles from any MIDI file. Tested on a real PRO-E, free and open source.">
-<meta name="keywords" content="Roland PRO-E, Pro-E, Pro E, PRO-E mod, PRO-E firmware, Roland arranger mod, E-series, Juno chorus, LA synthesis, LA32, MT-32, CM-32L, custom firmware, synth mod">
+<title>Roland PRO-E Mods: Rosetta OS with Juno mode, arpeggiator, resonant filter and custom samples</title>
+<meta name="description" content="Roland PRO-E (Pro-E, Pro E) mods by Rosetta: custom firmware with a Juno mode, an arpeggiator, real Juno PWM, a resonant filter and Juno chorus on its reverb chip, your own long samples, synth tones on the USER PROGRAM buttons and new arranger styles from any MIDI file. One app patches your own dumps. Tested on a real PRO-E, free and open source.">
+<meta name="keywords" content="Roland PRO-E, Pro-E, Pro E, PRO-E mod, PRO-E firmware, PRO-E arpeggiator, Roland arranger mod, E-series, Juno mode, Juno PWM, Juno chorus, resonant filter, custom samples, LA synthesis, LA32, MT-32, CM-32L, custom firmware, synth mod">
 <link rel="canonical" href="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Roland PRO-E Mods: Rosetta OS, Juno mode + new effects">
-<meta property="og:description" content="Custom firmware for the Roland PRO-E arranger: Juno mode, a Juno chorus on its reverb chip, delay, lo-fi, drive, SYNTH EDIT and styles from MIDI. Tested on real hardware.">
+<meta property="og:title" content="Roland PRO-E Mods: Rosetta OS, Juno mode, arpeggiator + custom samples">
+<meta property="og:description" content="Custom firmware for the Roland PRO-E arranger: Juno mode, arpeggiator, Juno PWM, a resonant filter and Juno chorus on its reverb chip, long custom samples, SYNTH EDIT and styles from MIDI. Tested on real hardware.">
 <meta property="og:url" content="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/">
 <meta property="og:image" content="https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/img/screenshot.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Rosetta OS PRO-E","applicationCategory":"MultimediaApplication","operatingSystem":"Roland PRO-E Intelligent Arranger, Windows/Python for the tools","description":"Custom firmware for the Roland PRO-E arranger: Juno mode, new effects on its reverb chip (Juno chorus, delay, lo-fi, drive, flanger), SYNTH EDIT on the panel and new styles from MIDI files.","url":"https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Rosetta OS PRO-E","applicationCategory":"MultimediaApplication","operatingSystem":"Roland PRO-E Intelligent Arranger, Windows/Python for the tools","description":"Custom firmware for the Roland PRO-E arranger: Juno mode, an arpeggiator, Juno PWM, new effects on its reverb chip (resonant filter, Juno chorus, delay, lo-fi, drive, flanger), long custom samples, synth tones on the USER PROGRAM buttons, SYNTH EDIT on the panel and new styles from MIDI files. PRO-E Studio patches your own ROM dumps.","url":"https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
 </script>
 <style>
 :root{--bg:#f6f6f3;--paper:#fff;--fg:#17181a;--muted:#5c5f63;--rule:#d6d7d2;--bar:#17181a;--bar-fg:#f6f6f3;--accent:#d2461e;--lcd:#b9c94a;--lcd-ink:#28300e}
@@ -48,9 +48,10 @@ a{color:var(--accent)}
 <div class="wrap">
 <header>
 <img class="hero" src="img/hexgirl_icon.png" alt="Rosetta: Hex Girl badge">
-<h1>Roland PRO-E Mods: Rosetta OS with Juno mode and new effects</h1>
-<p class="lede">Custom firmware for the Roland PRO-E (Pro-E) Intelligent Arranger, the 1989 Italian arranger with an MT-32 voice board inside. A Juno mode, a moving Juno chorus on its reverb chip, and new styles from your MIDI files. Free, open source, tested on a real PRO-E.</p>
-<div class="lcd"> OS v0.11 PWM   </div>
+<h1>Roland PRO-E Mods: Rosetta OS with Juno mode, arpeggiator and custom samples</h1>
+<p class="lede">Custom firmware for the Roland PRO-E (Pro-E) Intelligent Arranger, the 1989 Italian arranger with an MT-32 voice board inside. A Juno mode with real PWM, an arpeggiator, a resonant filter and a moving Juno chorus on its reverb chip, your own long samples, and new styles from your MIDI files. Free, open source, tested on a real PRO-E.</p>
+<div class="lcd"> ROSETTA  PRO-E 
+ OS v0.14  ARP  </div>
 <div class="cta">
 <a class="btn" href="https://github.com/yuyoi/Rosetta-E-Style-studio-and-Pro-E-mods">Rosetta PRO-E on GitHub</a>
 <a class="btn alt" href="https://discord.gg/R3CQkFdRtf">Join the Discord</a>
@@ -68,26 +69,31 @@ a{color:var(--accent)}
 <div class="card"><b>Juno chorus</b><span>A moving stereo chorus built on the PRO-E's own Boss reverb chip: the full Juno-60 sweep (1.7-5.3 ms) at the Chorus I and II speeds, 128 positions in a click-free order, smoothed after the taps.</span></div>
 <div class="card"><b>Delay, lo-fi, drive, flanger</b><span>New programs for the same chip: delay 40-495 ms with feedback, bit-crush lo-fi with a tone control, drive, flanger, plus Roland's plate.</span></div>
 <div class="card"><b>Per-part effects</b><span>Choose which parts go into the effect: keep the drums dry and put the synth through the chorus.</span></div>
-<div class="card"><b>SYNTH EDIT on the panel</b><span>19 pages of tone editing on her own buttons and dial: filter, envelope, pitch envelope, LFO, waves, structures and the effects. You hear each change as you turn.</span></div>
+<div class="card"><b>SYNTH EDIT on the panel</b><span>20 pages of tone editing on her own buttons and dial: filter, envelope, pitch envelope, LFO, waves, structures and the effects. You hear each change as you turn.</span></div>
 <div class="card"><b>Live filter</b><span>Cutoff and resonance reach the notes you're holding, so filter sweeps work like a real knob.</span></div>
 <div class="card"><b>Resonant filter</b><span>A state-variable filter running on the Boss reverb chip: low-pass and band-pass, with or without resonance, 110 Hz-7 kHz. It filters PCM samples too.</span></div>
 <div class="card"><b>Bender wah</b><span>BENDER mode: the pitch bender sweeps the filter cutoff or resonance. Band-pass plus the bender is a wah.</span></div>
 <div class="card"><b>Juno PWM</b><span>A PWM knob, 0-10: an LFO in the voice CPU sweeps the LA chip's pulse width, for real Juno PWM strings.</span></div>
 <div class="card"><b>Wet-only mod</b><span>Cut two resistors (R27, R31) and the effect is the whole sound, not a thin layer on top. REVERB OFF still plays everything dry.</span></div>
+<div class="card"><b>Arpeggiator</b><span>Hold notes in the right hand and the SOLO tone plays them up, down, up-down or random, 1-3 octaves, 1/4 to 1/32, with LATCH. It follows the TEMPO dial, with or without a style running.</span></div>
+<div class="card"><b>Custom long samples</b><span>Your own WAVs in the wave ROMs: up to 4.10 s a slot at full rate, 8 s at half rate, 16 s at quarter rate, pitched back so they play at real speed. An 8 s song clip plays from an SFX pad, through the resonant filter. The drum kit stays stock.</span></div>
+<div class="card"><b>Tones on the USER buttons</b><span>WRITE + USER n saves the panel plus the SOLO synth tone, its effect and the bender mode in battery RAM. 48 slots; 16 Juno patches come with the tools.</span></div>
+<div class="card"><b>PRO-E Studio</b><span>One app: import your dumps, pick styles, drop in samples, tick the firmware parts, BUILD ALL, BURN each chip on a T48 (ID check, backup read, verify).</span></div>
 <div class="card"><b>Styles from MIDI</b><span>Turn a MIDI file into an arranger style with its own intro, fills and ending. It follows your left-hand chords.</span></div>
 <div class="card"><b>Hidden styles</b><span>8 styles that sat in the MSL-15 ROM with no button, now on BANK 3. Any TN-SC1 card style can go into an internal slot.</span></div>
 </div>
 <p>Every feature above is confirmed on hardware. The effects were measured on a real PRO-E through an audio interface.</p>
 
-<figure><img src="img/screenshot.png" alt="Rosetta E-Style Studio, styled after the PRO-E front panel" loading="lazy"><figcaption>Rosetta E-Style Studio: pick styles, set the OS text, build and burn to a T48.</figcaption></figure>
+<figure><img src="img/screenshot.png" alt="Rosetta OS PRO-E Studio: style slots, samples, firmware patcher" loading="lazy"><figcaption>PRO-E Studio: styles, OS text, samples and firmware, built from your own dumps and burned on a T48.</figcaption></figure>
+<figure><img src="img/studio_samples.png" alt="PRO-E Studio SAMPLES tab: long custom samples for the Roland PRO-E" loading="lazy"><figcaption>SAMPLES: drop WAVs, pick the wave each one replaces, the rate and the root note.</figcaption></figure>
 
 <h2>How it works</h2>
 <ol>
 <li>Read your own chips on a programmer such as a T48 (IC7 style ROM, IC4 OS, and for the synth side IC28 and IC13 on the voice board). Keep the originals.</li>
-<li>Run the build tools. They patch your dumps and check every change before writing the burn files.</li>
+<li>Open PRO-E Studio (<code>romstudio/run_romstudio.bat</code>). It patches your dumps and checks every change before writing the burn files.</li>
 <li>Burn W27C040 / W27C512 chips and fit them, notch the right way. Put the originals back and she's a stock PRO-E again.</li>
 </ol>
-<p><b>Styles and OS text</b> need only IC7 and IC4, no board mods. <b>SYNTH EDIT and Juno mode</b> need the one-wire pin-31 mod. <b>The new effects</b> need IC13 and IC28 on the voice board.</p>
+<p><b>Styles and OS text</b> need only IC7 and IC4, no board mods. <b>SYNTH EDIT and Juno mode</b> need the one-wire pin-31 mod. <b>The new effects</b> need IC13 and IC28 on the voice board. <b>Custom samples</b> need IC37 and IC38 (plus IC28 for the wave table).</p>
 
 <h2>Why it sounds like this</h2>
 <p>The PRO-E's voice board is Roland MT-32 / CM-32L hardware: the same LA synth chip as the D-50, and a Boss reverb DSP. LA tones were always "a sampled attack over a plain synth body". Juno mode gives that body what the chip could always do but no front panel offered. The chorus works by having the voice CPU step the reverb chip through 128 delay positions, in an order where each step changes one control byte only.</p>

@@ -3,7 +3,7 @@
 1. styles only (firmware off): rebuild v0.2 by clicking, compare with the burned v0.2 IC7.
 2. stock styles + Rosetta OS: the build must refuse until "Make room for the OS" is clicked, then build.
 3. the v0.3 project + 4 test WAVs dropped on SAMPLES + all firmware on: IC7 / IC4 / IC13 must equal the chips in her
-   (v0.13, ROSETTA FX v8.2c); IC28 must equal her v8.1 chip when the sample table equals her LONG2 table.
+   (v0.14, ROSETTA FX v8.2c); IC28 must equal her v8.1 chip when the sample table equals her LONG2 table.
    Needs ../dumps, ../v0.3_songs.proe.json and the cards it names (the author's machine).
 """
 import hashlib, os, sys, time, tempfile, wave
@@ -113,7 +113,7 @@ for k in (2, 3):                                  # LONG2 stored these two at qu
     combo.setCurrentIndex(combo.findData(4))
 check('rate combos -> quarter', [s['rate'] for s in w.samples] == [0, 0, 4, 4])
 last = build()
-her = {'IC7': '84fe1c1b', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}
+her = {'IC7': '6a107e72', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}
 for chip, want in her.items():
     check(f'{chip} == the chip in her ({want})', chip in last and last[chip][1].startswith(want))
 check('IC37 + IC38 built', 'IC37' in last and 'IC38' in last)

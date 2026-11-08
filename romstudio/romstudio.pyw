@@ -64,8 +64,8 @@ QMenuBar, QMenu {{ background: {PANEL}; color: {TXT}; }}
 QMenu::item:selected {{ background: {BLUE}; color: {BG}; }}
 """
 RATE_CHOICES = [('auto', 0), ('full 32 kHz', 1), ('half 16 kHz', 2), ('quarter 8 kHz', 4)]
-FW_OPTS = (('os', 'Rosetta OS v0.13  (IC7 + IC4)',
-            'SYNTH EDIT, JUNO mode, ROSETTA FX pages, USER PROGRAM tones, bender CUTOFF/RESO, MIDI remote. '
+FW_OPTS = (('os', 'Rosetta OS v0.14  (IC7 + IC4)',
+            'SYNTH EDIT, JUNO mode, ARPEGGIATOR, ROSETTA FX pages, USER PROGRAM tones, bender CUTOFF/RESO, MIDI remote. '
             'Needs the pin-31 mod (docs/PIN31_MOD.md).'),
            ('ck34', 'CK-34 v8.1  (IC28)',
             'live filter on held notes, PWM LFO, moving Juno chorus, 8 FX modes, wet-only routing. Your samples go here too.'),
@@ -468,7 +468,7 @@ class Studio(QMainWindow):
         self.out_label.setText(f'Output: {self.out_dir}   (File > Output folder)')
         if self.fw_on['os']:
             self.os_text_note.setText('Rosetta OS is on: the version screen shows the OS version, and a banner left as it is '
-                                      'becomes the OS banner (" ROSETTA  PRO-E " / " OS v0.13 PROGS ").')
+                                      'becomes the OS banner (" ROSETTA  PRO-E " / " OS v0.14  ARP  ").')
         else:
             self.os_text_note.setText('')
 

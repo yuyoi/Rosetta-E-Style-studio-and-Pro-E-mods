@@ -35,7 +35,7 @@ CHIPS = {
     'IC37': ('W27C040', 0xDA86, 'wave ROM, lower 512 KB'),
     'IC38': ('W27C040', 0xDA86, 'wave ROM, upper 512 KB'),
 }
-VERSIONS = {'os': 'Rosetta OS v0.13', 'ck34': 'CK-34 v8.1', 'fx': 'ROSETTA FX v8.2c'}
+VERSIONS = {'os': 'Rosetta OS v0.14', 'ck34': 'CK-34 v8.1', 'fx': 'ROSETTA FX v8.2c'}
 
 
 def sha1(path):

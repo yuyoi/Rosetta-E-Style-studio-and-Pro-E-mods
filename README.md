@@ -1,4 +1,4 @@
-# Roland PRO-E mods: Rosetta OS custom firmware with Juno mode, new effects and styles from MIDI
+# Roland PRO-E mods: Rosetta OS custom firmware with Juno mode, arpeggiator, resonant filter, custom samples and styles from MIDI
 
 **Rosetta E-Style Studio + PRO-E mods** (WIP) · for the Roland **PRO-E** (Pro-E / Pro E / ProE) Intelligent Arranger and the
 E-series arrangers · [project page](https://yuyoi.github.io/Rosetta-E-Style-studio-and-Pro-E-mods/)
@@ -6,8 +6,9 @@ E-series arrangers · [project page](https://yuyoi.github.io/Rosetta-E-Style-stu
 <!-- art: docs/mascot/ (JSW is drawing the ad) -->
 <p align="center"><a href="https://discord.gg/R3CQkFdRtf"><img src="https://img.shields.io/badge/Roland%20Modding-join%20the%20Discord-5865F2?logo=discord&logoColor=white" alt="Join the Roland Modding Discord"></a></p>
 
-Pull the **Roland E-series arrangers** into this century: a **Juno mode** for the PRO-E's LA synth engine, a **Juno
-chorus, delay, lo-fi and drive** on its own reverb chip, new **music styles from any MIDI file**, the **hidden styles**
+Pull the **Roland E-series arrangers** into this century: a **Juno mode** with real PWM and an **arpeggiator** for the
+PRO-E's LA synth engine, a **resonant filter, Juno chorus, delay, lo-fi and drive** on its own reverb chip, your own
+**long samples** in the wave ROMs, new **music styles from any MIDI file**, the **hidden styles**
 nobody could select, and a custom OS for the **PRO-E Intelligent Arranger** (1989, made in Italy, with an MT-32 /
 CM-32L voice board inside). Build it in one app and burn it straight to a T48 programmer.
 
@@ -33,8 +34,9 @@ burned on a T48. More: [SAMPLES tab](docs/img/studio_samples.png) · [FIRMWARE t
 | **Hidden MSL-15 banks** | 8 styles that were in the MSL-15 ROM but had no button: KRONCONG, LANGGAM ASLI, DANGDUT, JOGET (Asia) and DÜYEK, ANADOLU, 9/8, 5/8 (Turkey). Now on BANK 3 |
 | **Any TN-SC1 card style → an internal slot** | pick from all 16 MSL-15 cards (~68 styles), byte-checked against the original card data |
 | **OS text** | your own boot banner and version screen |
-| **SYNTH EDIT** | press CURSOR: tone editing on her own panel, 19 pages (Juno, filter, envelope, pitch env, LFO, voice, waves, live filter, effects…), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
+| **SYNTH EDIT** | press CURSOR: tone editing on her own panel, 20 pages (Juno, filter, envelope, pitch env, LFO, voice, waves, live filter, effects…), changes heard as you turn the dial. The tone is read back from the voice board first. [re/SYNTH_EDIT.md](re/SYNTH_EDIT.md). Needs the pin-31 mod |
 | **JUNO mode** | MAKE JUNO turns any tone into saw + pulse + sub oscillator + detuned saw through one filter and envelope, then SAW / PULSE / SUB levels, pulse width, DETUNE and RANGE like a Juno panel. **PWM** knob (0-10): real pulse-width modulation, an LFO in IC28 rewrites the LA chip's pulse width; turn **LFO DEPTH** up, LFO RATE sets the speed. ALL edits all four partials. `tools/juno_patch.py strings` loads a Juno PWM string patch |
+| **Arpeggiator** | SYNTH EDIT page 20 ARPEGGIO: hold notes in the right hand and the SOLO tone plays them **UP / DOWN / UPDOWN / RANDOM**, **1-3 octaves**, **1/4 to 1/32** (with triplets), gate half a step, **LATCH** (the notes stay after you let go; the next chord replaces them). Runs on the arranger clock, so the TEMPO dial sets the speed, with or without a style playing. MIDI IN notes on SOLO are arpeggiated too |
 | **USER PROGRAM tones** | the 48 USER PROGRAM buttons now hold a full synth tone too: **WRITE + USER n** saves the panel plus the SOLO tone, its effect (mode, time, level) and the BENDER mode into battery RAM; **USER n** brings it all back. `tools/user_tones.py` loads 16 Juno patches (brass, pads, PWM strings, leads, basses, wah stab, techno arp). The composer is gone to make room (its 3 song pages hold the tones) |
 | **Long samples** | your own sounds in the wave ROMs: up to **4.10 s per slot at full rate, 8 s at half rate (16 kHz), 16 s at quarter rate**, pitched back so they play at real speed and pitch. An 8 s song clip plays from an SFX pad, others from PCM WAVE 2-n in SYNTH EDIT, all through the resonant filter. The drum kit stays stock. SAMPLES tab in the Studio |
 | **Live filter** | cutoff and resonance changes reach notes you're holding (IC28 build), so filter sweeps work like a real knob |
@@ -121,7 +123,6 @@ Planned, roughly in order ([ROADMAP.md](ROADMAP.md)):
 - **TN-SC1 card adapter:** burn song styles onto a card for any E-series.
 - **LFO block in IC28:** PWM is done. Next: LFO → filter, delayed vibrato, and the mod wheel as a second filter axis.
 - **D-50 flavour:** the PRO-E has the D-50's LA chip. D-50 style LFOs, chorus + reverb and the famous D-50 patches as presets.
-- **Arpeggiator:** hold a chord, it plays up / down / up-down / random on SOLO, locked to the arranger clock.
 - **Patch menu:** the PATCH buttons stop overwriting the SOLO tone; the BANK / NUMBER tone buttons open SYNTH EDIT pages.
 - **Drum samples:** a real (metal) drum kit in place of the stock one, from the SAMPLES tab.
 - **Extra outputs:** after the wet-only mod the SYN1 dry signal is free: tap IC18 pin 1 / IC2 pin 7 (through a cap, then a small TL072 buffer board) for outs 3-4. Being tested.

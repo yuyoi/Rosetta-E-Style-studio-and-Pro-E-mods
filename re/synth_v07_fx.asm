@@ -780,3 +780,280 @@ rq_lp:  ldx RADR
         bne rq_lp
         jmp rtail
 rq_no:  rts
+
+; ================= v0.14 ARPEGGIATOR =================
+; Selector 8 (HAR, the SOLO note send at $42CB): ARPK = key, ARPK+1 = velocity (0 = key up).
+;   ARP OFF: the note goes to the CK-34 as before ($EBF1). ARP on: held keys -> ARPN (sorted, up to 8), not played.
+; Selector 9 (ATK, every 24 PPQN arranger tick, stopped or playing, TEMPO = speed): plays the list one note at a time:
+;   UP, DOWN, UPDOWN, RANDOM over 1-3 octaves, RATE 1/4 .. 1/32, gate = half a step. LATCH: the notes stay after the
+;   keys are up; the first key down after all keys were up starts a new list.
+SOLOON   = $EBF1                ; IC4: D = key, velocity (0 = off) -> SOLO note to the CK-34 (part gate + velocity mode)
+
+arp:    pshy
+        cmpa #8
+        bne ar_tk
+        jsr ar_key
+        puly
+        sec                     ; HAR: FAR rts = back to $42CE
+        rts
+ar_tk:  jsr ar_tick
+        puly
+        clc                     ; ATK: FAR continues at ATK2
+        rts
+
+arpinit: clr ARPM
+        ldaa #3                 ; 1/16
+        staa ARPR
+        clr ARPO
+        clr ARPL
+        clr ARPC
+        clr ARPS
+        clr ARPQ
+        clr ARPG
+        ldaa #100
+        staa ARPVL
+        ldaa #$5A
+        staa ARPRN
+        rts
+
+ar_key: ldd ARPK
+        tst ARPM
+        bne ak_on
+        jmp SOLOON              ; ARP OFF: the note as it was
+ak_on:  tstb
+        beq ak_off
+        stab ARPVL
+        tst ARPL                ; LATCH: the first key down while no key is held starts a new list
+        beq ak_add
+        tst ARPQ
+        bne ak_add
+        jsr ar_clr
+ak_add: inc ARPQ
+        ldaa ARPK
+        jmp ar_ins
+ak_off: jsr ar_held             ; keyboard: her SOLO key map is the truth (no drift)
+        bne ak_o0
+        clr ARPQ
+        tst ARPL
+        bne ak_x
+        jmp ar_clr              ; all keys up, no latch: stop + empty
+ak_o0:  tst ARPQ
+        beq ak_o1
+        dec ARPQ
+ak_o1:  tst ARPL
+        bne ak_x
+        ldaa ARPK
+        jsr ar_del
+        tst ARPC
+        bne ak_x
+        jmp ar_off              ; last note out: the sounding note stops
+ak_x:   rts
+
+; Z = 1: no SOLO key down (her held map $248C-$249B, updated before $42CB). MIDI IN notes ($62.0) have no map: Z = 0.
+ar_held: brset $62,#$01,ah_m
+        ldx #$248C
+        clra
+ah_lp:  oraa 0,x
+        inx
+        cpx #$249C
+        bcs ah_lp
+        tsta
+        rts
+ah_m:   ldaa #1
+        rts
+
+; A = key: into ARPN, sorted, no doubles, max 8. The first note restarts the pattern on the next tick.
+ar_ins: tst ARPC
+        bne ai_1
+        ldab #1
+        stab ARPT
+        ldab #$FF
+        stab ARPI
+ai_1:   ldab ARPC
+        cmpb #8
+        bcc ai_x
+        ldx #ARPN
+        clrb
+ai_lp:  cmpb ARPC
+        beq ai_put
+        cmpa 0,x
+        beq ai_x                ; held already
+        bcs ai_mv               ; lower than this one: it goes here
+        inx
+        incb
+        bra ai_lp
+ai_mv:  stx ARPY                ; move [X .. end) up one, from the end
+        ldab ARPC
+        ldx #ARPN
+        abx
+ai_m1:  dex
+        ldab 0,x
+        stab 1,x
+        cpx ARPY
+        bne ai_m1
+ai_put: staa 0,x
+        inc ARPC
+ai_x:   rts
+
+; A = key: out of ARPN
+ar_del: ldx #ARPN
+        clrb
+ad_lp:  cmpb ARPC
+        beq ad_x
+        cmpa 0,x
+        beq ad_rm
+        inx
+        incb
+        bra ad_lp
+ad_rm:  dec ARPC
+ad_m:   cmpb ARPC
+        bcc ad_x
+        ldaa 1,x
+        staa 0,x
+        inx
+        incb
+        bra ad_m
+ad_x:   rts
+
+ar_off: ldaa ARPS               ; the sounding ARP note off
+        beq ao_x
+        clrb
+        clr ARPS
+        jmp SOLOON
+ao_x:   rts
+
+ar_clr: jsr ar_off
+        clr ARPC
+        rts
+
+ar_tick: tst ARPM
+        beq at_x
+        tst ARPC
+        bne at_1
+        jmp ar_off              ; nothing held
+at_1:   tst ARPG                ; gate: the note ends half way through its step
+        beq at_2
+        dec ARPG
+        bne at_2
+        jsr ar_off
+at_2:   dec ARPT
+        bne at_x
+        ldx #arptk
+        ldab ARPR
+        abx
+        ldaa 0,x
+        staa ARPT
+        lsra
+        staa ARPG
+        jsr ar_off
+        jsr ar_next
+        staa ARPS
+        ldab ARPVL
+        jmp SOLOON
+at_x:   rts
+
+; -> A = the next note. N = notes x octaves; pattern position ARPI.
+ar_next: ldaa ARPO
+        inca
+        ldab ARPC
+        mul
+        stab ARPX               ; N (max 24)
+        ldaa ARPM
+        cmpa #4
+        beq an_rnd
+        cmpa #3
+        bne an_p
+        aslb                    ; UPDOWN: 2N - 2 steps (at least 1)
+        subb #2
+        bne an_p
+        ldab #1
+an_p:   stab ARPP
+        ldaa ARPI
+        inca
+        cmpa ARPP
+        bcs an_p1
+        clra
+an_p1:  staa ARPI
+        ldab ARPM
+        cmpb #2
+        bne an_ud
+        nega                    ; DOWN: N - 1 - pos
+        adda ARPX
+        deca
+        bra an_ix
+an_ud:  cmpb #3
+        bne an_ix               ; UP: pos
+        cmpa ARPX
+        bcs an_ix
+        nega                    ; UPDOWN on the way down: 2N - 2 - pos
+        adda ARPX
+        adda ARPX
+        suba #2
+        bra an_ix
+an_rnd: ldaa ARPRN              ; RANDOM: x = 5x + 1, index = (x * N) / 256
+        ldab #5
+        mul
+        incb
+        stab ARPRN
+        tba
+        ldab ARPX
+        mul
+an_ix:  clrb                    ; index -> ARPN[index mod count] + 12 per octave
+an_o:   cmpa ARPC
+        bcs an_n
+        suba ARPC
+        addb #12
+        bra an_o
+an_n:   ldx #ARPN
+        pshb
+        tab
+        abx
+        pulb
+        ldaa 0,x
+        aba
+an_c:   cmpa #120
+        bls an_r
+        suba #12
+        bra an_c
+an_r:   rts
+
+; ARPEGGIO page: MODE / RATE / RANGE / LATCH. Turning MODE also sends ALL NOTES OFF on SOLO, so no note hangs.
+arpchg: jsr getval
+        psha
+        ldx IT
+        ldab IT_MAX,x
+        stab MAXV
+        pulb
+        jsr addclamp
+        ldx IT
+        ldaa IT_AUX,x
+        psha
+        ldx #ARPM
+        pshb
+        tab
+        abx
+        pulb
+        stab 0,x
+        pula
+        tsta
+        bne ac_1
+        ldaa #$B3               ; MODE changed: CC 123 all notes off, SOLO channel
+        jsr SENDCK
+        ldaa #$7B
+        jsr SENDCK
+        clra
+        jsr SENDCK
+        clr ARPS
+ac_1:   tst ARPM
+        beq ac_clr              ; ARP OFF: forget the list
+        tst ARPL
+        bne ac_x
+        tst ARPQ
+        bne ac_x
+ac_clr: jsr ar_clr
+        tst ARPM
+        bne ac_x
+        clr ARPQ
+ac_x:   rts
+
+arptk:  db 24,12,8,6,4,3        ; RATE 1/4 1/8 1/8T 1/16 1/16T 1/32 in 24 PPQN ticks (build_v07.ARP_TICKS)

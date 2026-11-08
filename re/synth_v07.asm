@@ -54,6 +54,7 @@ T_JUNO   = 8            ; v0.6 JUNO page: IT_AUX = op, IT_OFF = list id (255 = n
 T_PW     = 9            ; pulse width shown as the LA32 duty cycle ("   25%")
 T_FX     = 10           ; v0.7 FX field: IT_AUX = reverb mode, IT_OFF = field, IT_OFF+1 = list id (255 = number)
 T_BEND   = 12           ; v0.10 BENDER = PITCH / CUTOFF / RESO (BMODE), IT_OFF = list id
+T_ARP    = 13           ; v0.14 ARPEGGIATOR setting: RAM ARPM + IT_AUX, IT_OFF = list id
 T_WET    = 11           ; v0.7 PART FX routing: IT_AUX 0 = this part, 1 = all 8 parts, IT_OFF = list id
 J_PWM    = 4            ; JUNO ops: 0 MAKE JUNO, 1-3 SAW/PULSE/SUB level (P1/P2/P3), 4 PW MODE (P2), 5 DETUNE (P4), 6 RANGE
 J_DET    = 5
@@ -98,7 +99,10 @@ e_m4:   cmpa #4
         jmp bend                ; v0.10: A = 4 bender, B = raw A/D
 e_m5:   cmpa #5
         bcs e_midi
+        cmpa #8
+        bcc e_arp
         jmp uprog               ; v0.13: A = 5 store / 6 recall / 7 send (USER PROGRAM tones)
+e_arp:  jmp arp                 ; v0.14: A = 8 SOLO note (ARPK), 9 arranger tick
 e_midi: jmp midi               ; v0.7: A = 2 MIDI status / 3 MIDI data, B = the byte (remote control)
 e_key:  ldaa EDIT
         bne inedit
@@ -544,8 +548,16 @@ gv1w:   cmpb #T_WET
         bne gv1b
         jmp wetget
 gv1b:   cmpb #T_BEND
-        bne gv1p
+        bne gv1a
         ldaa BMODE
+        rts
+gv1a:   cmpb #T_ARP             ; v0.14: ARPM + IT_AUX (mode, rate, range, latch)
+        bne gv1p
+        ldx IT
+        ldab IT_AUX,x
+        ldx #ARPM
+        abx
+        ldaa 0,x
         rts
 gv1p:   jsr actmask
         ldaa REFP
@@ -646,8 +658,11 @@ ch2w:   cmpb #T_WET
         bne ch2b
         jmp wetchg
 ch2b:   cmpb #T_BEND
-        bne ch3
+        bne ch2a
         jmp bendchg
+ch2a:   cmpb #T_ARP
+        bne ch3
+        jmp arpchg              ; v0.14
 ch3:    jsr getval              ; A = current value (sets MASK)
         ldx IT
         ldab IT_FLAGS,x
@@ -898,11 +913,14 @@ rd0:    ldy #LINE1
         staa 0,y
         ldaa SEL
         inca
-        cmpa #10
-        bcs rd0a
+        ldab #'0'               ; v0.14: tens digit for pages 10-29 (20 pages now)
+rd0t:   cmpa #10
+        bcs rd0u
         suba #10
-        ldab #'1'
+        incb
         stab 0,y
+        bra rd0t
+rd0u:
 rd0a:   adda #'0'
         staa 1,y
         ldaa #'/'
@@ -1023,6 +1041,8 @@ fvj:    cmpb #T_FX
 fvw:    cmpb #T_WET
         beq fvw2
         cmpb #T_BEND
+        beq fvw2
+        cmpb #T_ARP             ; v0.14: ARP items are all lists
         bne fvj2
 fvw2:
         ldaa IT_OFF,x
@@ -1431,6 +1451,7 @@ boot8:  ldx #TRAMP_IMG
         clr EDIT
         clr PARTIX
         jsr fxinit              ; v0.7: FX defaults, remote control idle
+        jsr arpinit             ; v0.14: ARP off, 1/16, 1 octave, no latch, empty list
         ldx #splash             ; ~0.6 s "SYNTH READY": proves the PA6 half switch + boot copy on hardware
         ldy #LINE1
         ldab #32

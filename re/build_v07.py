@@ -35,8 +35,12 @@ RAM = dict(RAMBASE=0x2DA6, EDIT=0x2E00, LVL=0x2E01, SEL=0x2E02, ROW=0x2E03, PART
            WETA=0x306F, RACT=0x3070, RCNT=0x3071, MBYTE=0x3072, PKF=0x3073, PKEY=0x3074, PKB=0x3075, RADR=0x3076,
            RBUF=0x3078, BMODE=0x309A, BSKIP=0x309B, BLAST=0x309C,   # v0.10 bender (RBUF 40 -> 34 bytes)
            PEND=0x309D, PCNT=0x309E, UPG=0x309F, UIDX=0x30A0,     # v0.13 USER PROGRAM tones
-           LINE1=0x2E30, LINE2=0x2E40, WORK=0x2E50, HOOKBASE=0x2F50)
-assert RAM['WORK'] + 246 <= RAM['HOOKBASE']
+           LINE1=0x2E30, LINE2=0x2E40, WORK=0x2E50, HOOKBASE=0x2F50,
+           # v0.14 ARPEGGIATOR: held notes + settings after the trampoline ($2DF0-$2DFF), runtime after WORK ($2F46-$2F4F)
+           ARPN=0x2DF0, ARPM=0x2DF8, ARPR=0x2DF9, ARPO=0x2DFA, ARPL=0x2DFB, ARPC=0x2DFC, ARPT=0x2DFD, ARPI=0x2DFE,
+           ARPS=0x2DFF, ARPK=0x2F46, ARPVL=0x2F48, ARPG=0x2F49, ARPQ=0x2F4A, ARPRN=0x2F4B, ARPX=0x2F4C, ARPP=0x2F4D,
+           ARPY=0x2F4E)
+assert RAM['WORK'] + 246 <= RAM['ARPK'] and RAM['ARPY'] + 2 <= RAM['HOOKBASE']
 RBUFN = 34
 assert RAM['RBUF'] + RBUFN <= 0x30A2
 HW = dict(SHADOW=0x0A, LATCH=0x180D, PORTA=0x1000, BANKSEL=BANKSEL, ENTRY=CODE, BEAT=0x10, BEAT2=0x16,
@@ -44,7 +48,8 @@ HW = dict(SHADOW=0x0A, LATCH=0x180D, PORTA=0x1000, BANKSEL=BANKSEL, ENTRY=CODE, 
 FXSEG, FXSEG_END = 0x6800, 0xA000                 # v0.7: second code segment, free in both halves of bank 5
 
 # ---- menu data ----
-T_NUM, T_SGN, T_LIST, T_PCM, T_WAVE, T_PART, T_CLIST, T_RING, T_JUNO, T_PW, T_FX, T_WET, T_BEND = range(13)
+T_NUM, T_SGN, T_LIST, T_PCM, T_WAVE, T_PART, T_CLIST, T_RING, T_JUNO, T_PW, T_FX, T_WET, T_BEND, T_ARP = range(14)
+ARP_TICKS = [24, 12, 8, 6, 4, 3]                     # v0.14 RATE list -> 24 PPQN ticks per step (must match arptk)
 F_T, F_L, F_K, F_S = range(4)                     # FX fields: time, level, level*2 + time>>2, time & 3
 F_ABS, F_FIXP = 1, 2
 def _duty(pw):
@@ -76,6 +81,9 @@ LISTS = {
     'range': ["16'", "8'", "4'", "2'"],
     'keyf': ['-1', '-1/2', '-1/4', '0', '1/8', '1/4', '3/8', '1/2', '5/8', '3/4', '7/8', '1', '5/4', '3/2', '2',
              'S1', 'S2'],
+    'arpm': ['OFF', 'UP', 'DOWN', 'UPDOWN', 'RANDOM'],    # v0.14 ARPEGGIATOR
+    'arpr': ['1/4', '1/8', '1/8T', '1/16', '1/16T', '1/32'],
+    'arpo': ['1 OCT', '2 OCT', '3 OCT'],
 }
 LIST_IDS = {k: i for i, k in enumerate(LISTS)}
 # partial offsets (MT-32 timbre layout, max values from the CK-34's own clamp table)
@@ -157,6 +165,11 @@ ITEMS = {
     'drt':     it('DEPTH', T_FX, [F_L, 255], 7, 5),
     'wet':     it('PART FX', T_WET, [LIST_IDS['wet']], 3, 0),
     'weta':    it('ALL PARTS', T_WET, [LIST_IDS['wet']], 3, 1),
+    # v0.14 ARPEGGIATOR (RAM settings ARPM + aux: 0 mode, 1 rate, 2 range, 3 latch)
+    'arpm':    it('MODE', T_ARP, [LIST_IDS['arpm']], 4, 0),
+    'arpr':    it('RATE', T_ARP, [LIST_IDS['arpr']], 5, 1),
+    'arpo':    it('RANGE', T_ARP, [LIST_IDS['arpo']], 2, 2),
+    'arpl':    it('LATCH', T_ARP, [LIST_IDS['offon']], 1, 3),
 }
 PG_ROWS = 10                         # page record = title 11 + live + count + 10 item indices + pad = 24 bytes
 PAGES = [  # (title, live, items): order = scroll order; BANK 1-8 jump to the first eight
@@ -179,6 +192,7 @@ PAGES = [  # (title, live, items): order = scroll order; BANK 1-8 jump to the fi
     ('FLANGER', 0, ['flr', 'fld']),
     ('JUNO+REV', 0, ['drg', 'drt']),
     ('FX ROUTING', 0, ['wet', 'weta']),
+    ('ARPEGGIO', 0, ['arpm', 'arpr', 'arpo', 'arpl']),   # v0.14: last page = dial all the way right
 ]
 # FX defaults per mode (time, level): filter 1.3 kHz BP RES, hall, 150 ms 38 %, 11 bits soft, flanger, Juno+rev full, Chorus I, -
 FXDEF = [(7, 4), (4, 5), (5, 2), (1, 2), (1, 6), (2, 7), (2, 4), (3, 4)]
@@ -186,7 +200,7 @@ FXDEF = [(7, 4), (4, 5), (5, 2), (1, 2), (1, 6), (2, 7), (2, 4), (3, 4)]
 REV_TYPES = [('Filter ', 0, 7, 4), ('Hall   ', 1, 5, 5), ('Juno   ', 6, 2, 4), ('Drive  ', 3, 1, 6),   # v0.8 SUPER FX
              ('Delay  ', 2, 1, 2), ('Lo-Fi  ', 3, 1, 2), ('Flanger', 4, 1, 7), ('JunoRev', 5, 2, 7)]
 ITEM_KEYS = list(ITEMS)
-assert len(PAGES) <= 19
+assert len(PAGES) <= 29                             # v0.14: the "nn/NN" page counter handles 2-digit page numbers
 
 
 def ic28_partial_max():
@@ -250,7 +264,7 @@ def patch(img, base, addr, old, new, what):
     print(f'  patched ${addr:04X} {what}: {old.hex()} -> {new.hex()}')
 
 
-OS_VERSION = 'v0.13'
+OS_VERSION = 'v0.14'
 
 
 def build(ic7_base=None, ic4_base=None, banner=None, version=None):
@@ -265,9 +279,9 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
     tramp = bytes(ram_segs[RAM['RAMBASE']])
     hooks = bytes(ram_segs[RAM['HOOKBASE']])
     assert ram_syms['HOOK_END'] <= RAM['FXT'], 'hooks run into the FX variables at $%04X' % ram_syms['HOOK_END']
-    assert ram_syms['TRAMP_END'] <= RAM['EDIT'], 'trampoline runs into the variables'
+    assert ram_syms['TRAMP_END'] <= RAM['ARPN'], 'trampoline runs into the variables'
     syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD', 'HBD',
-                                         'HST', 'HRC', 'HTK')})
+                                         'HST', 'HRC', 'HTK', 'HAR', 'ATK')})
     syms.update(HOOK_LEN=len(hooks), TRAMP_LEN=len(tramp), CODE=CODE, NPAGES=len(PAGES), PGSIZE=24)
     src = (open(os.path.join(HERE, 'synth_v07.asm')).read() + tables_asm(ic28_partial_max(), deftone(lower))
            + 'TRAMP_IMG: db ' + ','.join(map(str, tramp)) + '\n' + 'HOOK_IMG: db ' + ','.join(map(str, hooks)) + '\n')
@@ -325,6 +339,10 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
     patch(ic4, 0xC000, 0xF4DD, bytes.fromhex('7e9419'), bytes([0x7E, hs >> 8, hs & 0xFF]), 'WRITE + USER store end -> HST')
     patch(ic4, 0xC000, 0xF57E, bytes.fromhex('7efc67'), bytes([0x7E, hr >> 8, hr & 0xFF]), 'USER recall end -> HRC')
     patch(lower, 0x4000, 0x51C4, bytes.fromhex('b62673'), bytes([0xBD, ht >> 8, ht & 0xFF]), 'link scheduler idle -> HTK')
+    # v0.14 ARPEGGIATOR: the SOLO note send and the 24 PPQN arranger tick go through the SYNTH code
+    har, atk = syms['HAR'], syms['ATK']
+    patch(lower, 0x4000, 0x42CB, bytes.fromhex('bdebf1'), bytes([0xBD, har >> 8, har & 0xFF]), 'SOLO note -> HAR')
+    patch(lower, 0x4000, 0xA118, bytes.fromhex('13104048'), bytes([0xBD, atk >> 8, atk & 0xFF, 0x01]), 'tick -> ATK')
     # v0.13: composer gone (user 2026-11-08: never used), so nothing stock writes the tone pages 2-3
     # (map: fw_map agent report 2026-11-08). Demo songs keep working (they never touch pages 1-3).
     patch(lower, 0x4000, 0x9057, bytes.fromhex('1210402d'), bytes.fromhex('135d802c'), 'PLAY outside demo -> rts')
@@ -348,7 +366,7 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
         lower[0x53C6 - 0x4000 + n] = m << 4 | t
         lower[0x53CE - 0x4000 + n] = l
     assert ic4[0x2D48] == 0x00
-    banner = banner or b' ROSETTA  PRO-E ' + b' OS v0.13 PROGS '
+    banner = banner or b' ROSETTA  PRO-E ' + b' OS v0.14  ARP  '
     version = version or b'ROSETTA OS PRO-E' + b'VER 00.51 110326'
     assert len(banner) == 32 and len(version) == 32, 'banner / version must be 2 x 16 characters'
     lower[0x19E1:0x19E1 + 32] = banner

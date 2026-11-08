@@ -152,4 +152,23 @@ HTK:     ldaa $2673              ; the replaced instruction: every exit reloads 
          jmp FAR
 HTKX:    ldaa $2673
          rts
+; ---- v0.14: ARPEGGIATOR. IC7 bank 0 $42CB (the SOLO note send, jsr $EBF1 with D = key, velocity) jsr HAR: the SYNTH
+; code plays the note (ARP off) or adds it to / takes it off the held list, returns C = 1 = FAR rts = back to $42CE.
+; IC7 bank 0 $A118 (arranger, once per 24 PPQN tick, stopped or playing) jsr ATK: the SYNTH code steps the ARP
+; (C = 0 -> ATK2), then the replaced brclr $10,#$40,$A164 runs here. A and X are kept for the stock code.
+HAR:     std ARPK
+         ldaa #8
+         jmp FAR
+ATK:     pshx
+         psha
+         ldaa #9
+         ldx #ATK2
+         jmp FAR
+ATK2:    pula
+         pulx
+         brclr $10,#$40,ATK3
+         rts
+ATK3:    ins
+         ins
+         jmp $A164
 HOOK_END:
