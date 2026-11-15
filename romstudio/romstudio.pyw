@@ -80,19 +80,67 @@ def dim(text):
     return l
 
 
+FONT5X7 = bytes.fromhex(   # classic HD44780-style 5x7 font, ASCII 0x20-0x7E, 5 columns per char, bit 0 = top row
+    '0000000000 00005f0000 0007000700 147f147f14 242a7f2a12 2313086462 3649552250 0005030000 001c224100 0041221c00'
+    '082a1c2a08 08083e0808 0050300000 0808080808 0060600000 2010080402 3e5149453e 00427f4000 4261514946 2141454b31'
+    '1814127f10 2745454539 3c4a494930 0171090503 3649494936 064949291e 0036360000 0056360000 0008142241 1414141414'
+    '4122140800 0201510906 324979413e 7e1111117e 7f49494936 3e41414122 7f4141221c 7f49494941 7f09090101 3e41415132'
+    '7f0808087f 00417f4100 2040413f01 7f08142241 7f40404040 7f0204027f 7f0408107f 3e4141413e 7f09090906 3e4151215e'
+    '7f09192946 4649494931 01017f0101 3f4040403f 1f2040201f 7f2018207f 6314081463 0304780403 6151494543 00007f4141'
+    '0204081020 41417f0000 0402010204 4040404040 0001020400 2054545478 7f48444438 3844444420 384444487f 3854545418'
+    '087e090102 081454543c 7f08040478 00447d4000 2040443d00 007f102844 00417f4000 7c04180478 7c08040478 3844444438'
+    '7c14141408 081414187c 7c08040408 4854545420 043f444020 3c4040207c 1c2040201c 3c4030403c 4428102844 0c5050503c'
+    '4464544c44 0008364100 00007f0000 0041360800 08082a1c08'.replace(' ', ''))
+
+
 class Lcd(QLabel):
-    """16 x 2 LCD, green on black like the Rosetta screens."""
+    """Fake PRO-E display: 16 x 2 character LCD, 5x7 dot-matrix chars on a yellow-green backlight, in a black bezel."""
+    BACK, BACK_EDGE, INK, GHOST, BEZEL = '#b9d24a', '#93ad2c', '#1c2a0c', '#a9c242', '#111316'
+    DOT, CHAR_W, LINE_H, MX, MY = 3.4, 6, 9, 14, 11       # dot pitch (px), char/line pitch in dots, glass margins
 
     def __init__(self):
         super().__init__()
-        f = QFont('Consolas', 15)
-        f.setStyleHint(QFont.Monospace)
-        self.setFont(f)
-        self.setStyleSheet(f'background: {LCD_BG}; color: {LCD_INK}; border: 2px solid {EDGE}; padding: 6px 10px;')
+        w = self.MX * 2 + 16 * self.CHAR_W * self.DOT + 16
+        h = self.MY * 2 + 2 * self.LINE_H * self.DOT + 16
+        self.setFixedSize(round(w), round(h))
+        self.lines = ('', '')
         self.show_text('', '')
 
     def show_text(self, l1, l2):
-        self.setText(f'{l1[:16]:<16}\n{l2[:16]:<16}')
+        self.lines = (f'{l1[:16]:<16}', f'{l2[:16]:<16}')
+        self.setText('\n'.join(self.lines))           # kept for anything that reads .text()
+        self.update()
+
+    def paintEvent(self, ev):
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPen
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        p.setPen(QPen(QColor('#2a2e34'), 2))
+        p.setBrush(QColor(self.BEZEL))
+        p.drawRoundedRect(r, 6, 6)
+        g = r.adjusted(8, 8, -8, -8)                    # the glass, backlit, a bit darker at the edges
+        grad = QLinearGradient(g.topLeft(), g.bottomLeft())
+        grad.setColorAt(0, QColor(self.BACK_EDGE)); grad.setColorAt(0.25, QColor(self.BACK))
+        grad.setColorAt(0.75, QColor(self.BACK)); grad.setColorAt(1, QColor(self.BACK_EDGE))
+        p.setPen(Qt.NoPen)
+        p.setBrush(grad)
+        p.drawRect(g)
+        d, s = self.DOT, self.DOT * 0.82
+        ink, ghost = QColor(self.INK), QColor(self.GHOST)
+        for row, line in enumerate(self.lines):
+            for col, ch in enumerate(line):
+                c = ord(ch) - 0x20
+                cols = FONT5X7[c * 5:c * 5 + 5] if 0 <= c < 95 else FONT5X7[0:5]
+                x0 = g.left() + self.MX - 8 + col * self.CHAR_W * d + 4
+                y0 = g.top() + self.MY - 8 + row * self.LINE_H * d + 4
+                for cx in range(5):
+                    for cy in range(8):
+                        on = cy < 7 and cols[cx] >> cy & 1
+                        p.setBrush(ink if on else ghost)        # unlit dots faintly visible, like the real glass
+                        p.drawRect(QRectF(x0 + cx * d, y0 + cy * d, s, s))
+        p.end()
 
 
 class SlotButton(QPushButton):
@@ -165,10 +213,13 @@ class Studio(QMainWindow):
         root = QWidget()
         v = QVBoxLayout(root)
         head = QHBoxLayout()
-        png = os.path.join(ASSETS, 'hexgirl_icon.png')
+        png = os.path.join(ASSETS, 'app_icon.png')
         if os.path.exists(png):
             pic = QLabel()
-            pic.setPixmap(QPixmap(png).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            dpr = QApplication.primaryScreen().devicePixelRatio()      # sharp on scaled screens (125/150 %)
+            pm = QPixmap(png).scaled(round(72 * dpr), round(72 * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pm.setDevicePixelRatio(dpr)
+            pic.setPixmap(pm)
             head.addWidget(pic)
         logo = QLabel(f'<span style="font-size:17pt; font-weight:700; color:{GREEN}">ROSETTA OS&nbsp;&nbsp;//&nbsp;&nbsp;PRO-E STUDIO</span>'
                       f'<br><span style="color:{DIM}">styles · samples · firmware · T48 burn&nbsp;&nbsp;v{VERSION}</span>')
@@ -778,7 +829,16 @@ def first_run():
 
 
 def main():
+    if sys.platform == 'win32':                      # own taskbar group + icon (else Windows lumps it with other Python apps)
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Rosetta.ProEStudio')
+        except Exception:
+            pass
     app = QApplication(sys.argv)
+    ico = os.path.join(ASSETS, 'rosetta_proe.ico')
+    if os.path.exists(ico):
+        app.setWindowIcon(QIcon(ico))
     if not first_run():
         sys.exit(0)
     w = Studio()
