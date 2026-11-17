@@ -41,8 +41,12 @@ RAM = dict(RAMBASE=0x2DA6, EDIT=0x2E00, LVL=0x2E01, SEL=0x2E02, ROW=0x2E03, PART
            ARPS=0x2DFF, ARPK=0x2F46, ARPVL=0x2F48, ARPG=0x2F49, ARPQ=0x2F4A, ARPRN=0x2F4B, ARPX=0x2F4C, ARPP=0x2F4D,
            ARPY=0x2F4E)
 assert RAM['WORK'] + 246 <= RAM['ARPK'] and RAM['ARPY'] + 2 <= RAM['HOOKBASE']
+# v0.15: the stock CHORD LOOP buffer was $2DA5-$30A2 (= all of the above). It now lives in SRAM page 3 $3000-$3FEF, so
+# $30A3-$30AC is free too: the FX variables move up 10 bytes to make room for the LIO hook.
+LOOP_BASE, LOOP_LIMIT, FXSHIFT = 0x3000, 0x3FF0, 10
+RAM.update({k: v + FXSHIFT for k, v in RAM.items() if v >= 0x3050})
 RBUFN = 34
-assert RAM['RBUF'] + RBUFN <= 0x30A2
+assert RAM['RBUF'] + RBUFN <= RAM['BMODE'] and RAM['UIDX'] < 0x30AD   # $30AD = master tune (stock)
 HW = dict(SHADOW=0x0A, LATCH=0x180D, PORTA=0x1000, BANKSEL=BANKSEL, ENTRY=CODE, BEAT=0x10, BEAT2=0x16,
           MIDIOUT=0xE84D, LCDWAIT=0xD5E9, LCDCMD=0xD611, LCDDATA=0x160E, RBUFN=RBUFN)
 FXSEG, FXSEG_END = 0x6800, 0xA000                 # v0.7: second code segment, free in both halves of bank 5
@@ -264,7 +268,7 @@ def patch(img, base, addr, old, new, what):
     print(f'  patched ${addr:04X} {what}: {old.hex()} -> {new.hex()}')
 
 
-OS_VERSION = 'v0.14'
+OS_VERSION = 'v0.15'
 
 
 def build(ic7_base=None, ic4_base=None, banner=None, version=None):
@@ -280,8 +284,9 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
     hooks = bytes(ram_segs[RAM['HOOKBASE']])
     assert ram_syms['HOOK_END'] <= RAM['FXT'], 'hooks run into the FX variables at $%04X' % ram_syms['HOOK_END']
     assert ram_syms['TRAMP_END'] <= RAM['ARPN'], 'trampoline runs into the variables'
+    assert 255 < len(hooks) <= 510, 'boot8 copies the hooks in two pieces (255 + rest)'
     syms.update({k: ram_syms[k] for k in ('RAMKEY', 'RAMTICK', 'BOOTRET', 'HB1', 'HB2', 'HB3', 'HB4', 'HB5', 'HMS', 'HMD', 'HBD',
-                                         'HST', 'HRC', 'HTK', 'HAR', 'ATK')})
+                                         'HST', 'HRC', 'HTK', 'HAR', 'ATK', 'LIO')})
     syms.update(HOOK_LEN=len(hooks), TRAMP_LEN=len(tramp), CODE=CODE, NPAGES=len(PAGES), PGSIZE=24)
     src = (open(os.path.join(HERE, 'synth_v07.asm')).read() + tables_asm(ic28_partial_max(), deftone(lower))
            + 'TRAMP_IMG: db ' + ','.join(map(str, tramp)) + '\n' + 'HOOK_IMG: db ' + ','.join(map(str, hooks)) + '\n')
@@ -343,6 +348,28 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
     har, atk = syms['HAR'], syms['ATK']
     patch(lower, 0x4000, 0x42CB, bytes.fromhex('bdebf1'), bytes([0xBD, har >> 8, har & 0xFF]), 'SOLO note -> HAR')
     patch(lower, 0x4000, 0xA118, bytes.fromhex('13104048'), bytes([0xBD, atk >> 8, atk & 0xFF, 0x01]), 'tick -> ATK')
+    # v0.15 CHORD LOOP: buffer $2DA5-$30A2 (page 0, over the Rosetta RAM) -> page 3 $3000-$3FEF. The 6 base pointers and
+    # the end limit change; the 10 buffer accesses jsr LIO (the SYNTH code switches page 3 in, see loopio). Branch
+    # offsets that moved are recomputed by hand: A182 beq $A1B0, A2C3 beq $A322, A2CA beq $A2BE.
+    for a in (0xA13E, 0xA1BE, 0xA1F7, 0xA2BB, 0xA3A7):
+        patch(lower, 0x4000, a, bytes.fromhex('ce2da5'), bytes([0xCE, LOOP_BASE >> 8, LOOP_BASE & 0xFF]), 'loop base')
+    patch(lower, 0x4000, 0xA1B0, bytes.fromhex('8c2da5'), bytes([0x8C, LOOP_BASE >> 8, LOOP_BASE & 0xFF]), 'loop base (cpx)')
+    patch(lower, 0x4000, 0xA1DB, bytes.fromhex('8c30a3'), bytes([0x8C, LOOP_LIMIT >> 8, LOOP_LIMIT & 0xFF]), 'loop limit')
+    lio = syms['LIO']
+    J = bytes([0xBD, lio >> 8, lio & 0xFF])
+    for addr, old, new, what in (
+            (0xA17D, 'a60081fe272d97aca60197ad', J + bytes.fromhex('81fe272c97ac010101'), 'play: read event'),
+            (0xA1A3, 'a60008', J, 'play: read delta'),
+            (0xA1CC, 'a7007f0079', J + b'\x01\x01', 'rec: write delta'),
+            (0xA1D3, '091c0080', J + b'\x01', 'rec: mark delta follows'),
+            (0xA1E2, '86fea700', J + b'\x01', 'rec: end mark'),
+            (0xA245, 'de7aed00', J + b'\x01', 'rec: write event'),
+            (0xA2BE, 'a60081fe275e08a60008848027f2', J + bytes.fromhex('81fe275d') + J + bytes.fromhex('848027f2'),
+             'trim: scan events'),
+            (0xA2CC, 'e600d77e', J + b'\x01', 'trim: read delta'),
+            (0xA2E7, 'e600d0aa2606091d00802002e70008', J + b'\x01' * 12, 'trim: fix delta')):
+        assert len(new) == len(bytes.fromhex(old)), what
+        patch(lower, 0x4000, addr, bytes.fromhex(old), new, 'loop -> LIO: ' + what)
     # v0.13: composer gone (user 2026-11-08: never used), so nothing stock writes the tone pages 2-3
     # (map: fw_map agent report 2026-11-08). Demo songs keep working (they never touch pages 1-3).
     patch(lower, 0x4000, 0x9057, bytes.fromhex('1210402d'), bytes.fromhex('135d802c'), 'PLAY outside demo -> rts')
@@ -366,7 +393,7 @@ def build(ic7_base=None, ic4_base=None, banner=None, version=None):
         lower[0x53C6 - 0x4000 + n] = m << 4 | t
         lower[0x53CE - 0x4000 + n] = l
     assert ic4[0x2D48] == 0x00
-    banner = banner or b' ROSETTA  PRO-E ' + b' OS v0.14  ARP  '
+    banner = banner or b' ROSETTA  PRO-E ' + b' OS v0.15  ARP  '
     version = version or b'ROSETTA OS PRO-E' + b'VER 00.51 110326'
     assert len(banner) == 32 and len(version) == 32, 'banner / version must be 2 x 16 characters'
     lower[0x19E1:0x19E1 + 32] = banner

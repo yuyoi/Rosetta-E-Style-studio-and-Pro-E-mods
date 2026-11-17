@@ -113,7 +113,7 @@ for k in (2, 3):                                  # LONG2 stored these two at qu
     combo.setCurrentIndex(combo.findData(4))
 check('rate combos -> quarter', [s['rate'] for s in w.samples] == [0, 0, 4, 4])
 last = build()
-her = {'IC7': '6a107e72', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}
+her = {'IC7': 'f35c2c2a', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}   # IC7 = OS v0.15 (chord loop fix); she still has v0.14 6a107e72 until it is burned
 for chip, want in her.items():
     check(f'{chip} == the chip in her ({want})', chip in last and last[chip][1].startswith(want))
 check('IC37 + IC38 built', 'IC37' in last and 'IC38' in last)

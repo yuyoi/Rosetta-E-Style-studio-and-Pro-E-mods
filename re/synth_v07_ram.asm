@@ -171,4 +171,16 @@ ATK2:    pula
 ATK3:    ins
          ins
          jmp $A164
+; ---- v0.15: CHORD LOOP buffer moved to SRAM page 3 $3000 (stock: $2DA5-$30A2, right on top of this RAM code, so
+; recording a chord loop overwrote the trampoline and reset her). The 9 buffer accesses in IC7 bank 0 $A17D-$A2F5
+; jsr LIO; the SYNTH code (selector 10) does the access with page 3 switched in. Its return address says which one.
+; It reads / changes the stacked A, X and B, so the stock code carries on with the registers it expects.
+LIO:     pshx
+         psha
+         ldaa #10
+         ldx #LIO2
+         jmp FAR
+LIO2:    pula
+         pulx
+         rts
 HOOK_END:

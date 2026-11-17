@@ -102,7 +102,10 @@ e_m5:   cmpa #5
         cmpa #8
         bcc e_arp
         jmp uprog               ; v0.13: A = 5 store / 6 recall / 7 send (USER PROGRAM tones)
-e_arp:  jmp arp                 ; v0.14: A = 8 SOLO note (ARPK), 9 arranger tick
+e_arp:  cmpa #10
+        bcc e_lio
+        jmp arp                 ; v0.14: A = 8 SOLO note (ARPK), 9 arranger tick
+e_lio:  jmp loopio              ; v0.15: A = 10 chord loop buffer access (LIO)
 e_midi: jmp midi               ; v0.7: A = 2 MIDI status / 3 MIDI data, B = the byte (remote control)
 e_key:  ldaa EDIT
         bne inedit
@@ -1446,12 +1449,15 @@ boot8:  ldx #TRAMP_IMG
         jsr b8_cp
         ldx #HOOK_IMG           ; v0.5: the tempo-LED hooks IC4 jumps to
         ldy #HOOKBASE
-        ldab #HOOK_LEN
+        ldab #255               ; v0.15: the hooks are over 255 bytes now (build checks 255 < HOOK_LEN <= 510)
+        jsr b8_cp
+        ldab #HOOK_LEN-255
         jsr b8_cp
         clr EDIT
         clr PARTIX
         jsr fxinit              ; v0.7: FX defaults, remote control idle
         jsr arpinit             ; v0.14: ARP off, 1/16, 1 octave, no latch, empty list
+        jsr loopinit            ; v0.15: chord loop buffer in page 3 (empty on the first boot)
         ldx #splash             ; ~0.6 s "SYNTH READY": proves the PA6 half switch + boot copy on hardware
         ldy #LINE1
         ldab #32

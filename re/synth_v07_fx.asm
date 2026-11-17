@@ -1057,3 +1057,118 @@ ac_clr: jsr ar_clr
 ac_x:   rts
 
 arptk:  db 24,12,8,6,4,3        ; RATE 1/4 1/8 1/8T 1/16 1/16T 1/32 in 24 PPQN ticks (build_v07.ARP_TICKS)
+
+; ---------------- v0.15: CHORD LOOP buffer in SRAM page 3 $3000-$3FEF ----------------
+; Stock keeps the chord loop at page 0 $2DA5-$30A2, the same RAM as the trampoline, hooks and variables, so recording
+; a loop overwrote them and reset her. IC7 bank 0 now points the loop at $3000 and does its 10 buffer accesses through
+; LIO (RAM) -> here, with page 3 switched in by pgrd / pgwr. Stack: 5,y = B, 8,y = A, 9,y = X, 11,y = the return
+; address of the jsr LIO, which says which access it is. Results go back into the stacked registers.
+LOOPPG  = 3
+loopio: ldaa UPG
+        psha
+        ldaa #LOOPPG
+        staa UPG
+        tsy
+        ldx 9,y
+        ldd 11,y
+        cmpb #$80
+        beq lo_rd2
+        cmpb #$A6
+        beq lo_rdi
+        cmpb #$D6
+        beq lo_setm
+        cmpb #$E5
+        beq lo_end
+        cmpb #$48
+        beq lo_std
+        cmpb #$C1
+        beq lo_rd
+        cmpb #$C8
+        beq lo_irdi
+        cmpb #$EA
+        beq lo_qfix
+        cmpa #$A1
+        beq lo_wr
+        jsr pgrd                ; $A2CC: B = [x], $7E = B
+        staa 5,y
+        staa $7E
+        bra lo_x
+lo_wr:  ldaa 8,y                ; $A1CC: [x] = A, clr $79
+        jsr pgwr
+        clr $0079
+        bra lo_x
+lo_rd2: jsr pgrd                ; $A17D: A = [x], $AD = [x+1] (not at the end mark)
+        cmpa #$FE
+        beq lo_ra
+        inx
+        jsr pgrd
+        staa $AD
+        dex
+lo_rd:  jsr pgrd                ; $A2BE: A = [x]
+lo_ra:  staa 8,y
+        bra lo_x
+lo_irdi: inx                    ; $A2C5: inx, A = [x], inx
+lo_rdi: jsr pgrd                ; $A1A3: A = [x], inx
+        staa 8,y
+        inx
+        bra lo_xx
+lo_setm: dex                    ; $A1D3: dex, [x] |= $80
+        jsr pgrd
+        oraa #$80
+        jsr pgwr
+        bra lo_xx
+lo_end: ldaa #$FE               ; $A1E2: A = $FE, [x] = $FE
+        staa 8,y
+        jsr pgwr
+        bra lo_x
+lo_std: ldx $7A                 ; $A245: ldx $7a, [x] = A, [x+1] = B
+        ldaa 8,y
+        jsr pgwr
+        inx
+        ldaa 5,y
+        jsr pgwr
+        dex
+        bra lo_xx
+lo_qfix: jsr pgrd               ; $A2E7: B = [x] - $AA; 0: [x-1] &= $7F, X kept; else [x] = B, inx
+        suba $AA
+        staa 5,y
+        bne lo_q2
+        dex
+        jsr pgrd
+        anda #$7F
+        jsr pgwr
+        inx
+        bra lo_xx
+lo_q2:  jsr pgwr
+        inx
+lo_xx:  stx 9,y
+lo_x:   pula
+        staa UPG
+        clc                     ; FAR continues at LIO2
+        rts
+
+; boot: page 3 $3FFE = "LP" once the loop buffer is set up; the first boot of v0.15 starts with an empty loop
+loopinit: ldaa UPG
+        psha
+        ldaa #LOOPPG
+        staa UPG
+        ldx #$3FFE
+        jsr pgrd
+        cmpa #'L'
+        bne li_new
+        inx
+        jsr pgrd
+        cmpa #'P'
+        beq li_x
+li_new: ldx #$3000
+        ldaa #$FE
+        jsr pgwr
+        ldx #$3FFE
+        ldaa #'L'
+        jsr pgwr
+        inx
+        ldaa #'P'
+        jsr pgwr
+li_x:   pula
+        staa UPG
+        rts

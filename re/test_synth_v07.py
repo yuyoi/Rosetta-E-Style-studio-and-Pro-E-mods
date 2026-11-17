@@ -24,6 +24,7 @@ def check(cond, what):
 class Rig:
     def __init__(self, reply=True, mute=0x0F):
         s = self.s = H.Sim()
+        self.p3 = bytearray([0xFE]) * 0x2000            # v0.15: SRAM page 3 (see w_latch)
         s.mem[0xC000:0x10000] = img4[:0x4000]
         self.latch, self.pa = 0x00, 0x00
         self.map()
@@ -58,6 +59,17 @@ class Rig:
         self.s.mem[0x4000:0xC000] = img7[o:o + 0x8000]
 
     def w_latch(self, v):
+        # v0.15: SRAM page 3 (the chord loop buffer) is modelled here too; other page bits stay a marker (key() uses 1).
+        # PRig below models all 4 pages itself.
+        if not hasattr(self, 'pages'):
+            p3 = (v & 3) == 3
+            if p3 != getattr(self, 'pg3', False):
+                m = self.s.mem
+                if p3:
+                    self.p0 = bytes(m[0x2000:0x4000]); m[0x2000:0x4000] = self.p3
+                else:
+                    self.p3[:] = m[0x2000:0x4000]; m[0x2000:0x4000] = self.p0
+                self.pg3 = p3
         self.latch = v; self.s.mem[0x180D] = v; self.map()
 
     def w_pa(self, v):
@@ -735,7 +747,8 @@ rec = r.pages[2][0xA00:0xB00]
 check(rec[:2] == b'RT' and bytes(rec[2:248]) == saved and list(rec[248:252]) == [0, 3, 4, 1],
       'store: RT + the SOLO tone read back + FX 0/3/4 + BENDER CUTOFF at page 2 $2A00')
 check(all(v == 0xFE for v in r.pages[2][:0xA00]) and all(v == 0xFE for v in r.pages[2][0xB00:])
-      and all(v == 0xFE for v in r.pages[1]) and all(v == 0xFE for v in r.pages[3]), 'store writes only its own record')
+      and all(v == 0xFE for v in r.pages[1]) and all(v == 0xFE for v in r.pages[3][:0x1FFE]), 'store writes only its own record')
+check(r.pages[3][0x1FFE:] == b'LP' and r.pages[3][0] == 0xFE, 'v0.15 boot: page 3 chord loop empty + LP mark')
 r.timbre[:] = bytes(246)                             # the stock recall put a preset tone in
 m[S['FXM']], m[S['FXT']], m[S['FXL']], m[S['BMODE']] = 2, 0, 0, 0
 m[0x0C] |= 0x20                                      # REVERB ON
@@ -944,4 +957,160 @@ note(40, 100); note(43, 100)
 s.mem[0x248C:0x249C] = bytes(16)                     # both keys up, but only one key-up reached $42CB
 s.mem[S['ARPS']] = 43
 check(note(40, 0) == [0x93, 43, 0] and r.ram('ARPC') == 0 and r.ram('ARPQ') == 0, 'empty key map: list cleared, no hanging note')
+
+# ---------- v0.15: CHORD LOOP buffer in SRAM page 3 ----------
+# Differential test: her stock loop code (v0.3b bank 0, buffer at page 0 $2DA5) and the patched code (buffer at page 3
+# $3000 through LIO) get the same record / play / trim calls. What they leave behind must match (pointers relative to
+# the buffer), and the patched run must not touch the Rosetta RAM at $2DA6-$30AC (except TMP, pgrd / pgwr's scratch).
+STOCK7 = open(os.path.join(B.BUILD, 'IC7_v0.3b_W27C040.bin'), 'rb').read()
+STOCK4 = open(os.path.join(B.BUILD, 'IC4_v0.3b_W27C512.bin'), 'rb').read()[:0x4000]
+ZP = (0x0B, 0x11, 0x24, 0x26, 0x59, 0x60, 0x79, 0x7E, 0x7F, 0x80, 0x84, 0x85, 0x9C, 0xAA, 0xAC, 0xAD)
+
+
+class Loop:
+    def __init__(self, patched):
+        self.patched, self.log = patched, []
+        if patched:
+            self.r = Rig()
+            self.r.boot()
+            self.s = self.r.s
+            self.r.w_latch(0x00)
+            self.s.mem[0x0A] = 0x00
+            self.base = B.LOOP_BASE
+        else:
+            self.s = H.Sim()
+            self.s.mem[0x4000:0xC000] = STOCK7[:0x8000]
+            self.s.mem[0xC000:0x10000] = STOCK4
+            self.base = 0x2DA5
+            self.s.mem[0x2DA5:0x30A3] = b'\xfe' * (0x30A3 - 0x2DA5)   # same blank fill as the rig's page 3
+        m = self.s.mem
+        self.s.stubs[0x42E9] = lambda s: self.log.append(('chord', s.a, s.b))
+        self.s.stubs[0x453F] = lambda s: self.log.append(('none',))
+        self.s.stubs[0xE4D0] = lambda s: self.log.append(('map', m[0xAC], m[0xAD]))
+        self.s.stubs[0xE51D] = lambda s: self.log.append(('mapclr',))
+        self.s.sp = 0x00C7
+        if patched:
+            self.ram0 = bytes(m[0x2DA6:0x30AD])
+
+    def buf(self, n=0x200):
+        if self.patched:
+            assert not self.r.pg3, 'page 3 left switched in'
+            return bytes(self.r.p3[self.base - 0x2000:self.base - 0x2000 + n])
+        return bytes(self.s.mem[self.base:self.base + n])
+
+    def call(self, addr, a=None, b=None, x=None):
+        s = self.s
+        if a is not None: s.a = a
+        if b is not None: s.b = b
+        if x is not None: s.x = self.base + x
+        s.call(addr)
+        if self.patched:
+            check(self.r.pa & 0x40 == 0 and (self.r.latch >> 4) == 0 and self.r.latch & 3 == 0 and not self.r.pg3,
+                  'loop: back in the lower half, bank 0, page 0 after $%04X' % addr)
+
+    def ptr(self, a):
+        return (self.s.mem[a] << 8 | self.s.mem[a + 1]) - self.base
+
+    def state(self):
+        return dict(zp=[self.s.mem[a] for a in ZP], p7a=self.ptr(0x7A), p7c=self.ptr(0x7C), log=list(self.log))
+
+
+def both(fn):
+    out = []
+    for p in (False, True):
+        L = Loop(p)
+        fn(L)
+        out.append(L)
+    return out
+
+
+def rec_script(L, keys, steps, end=True):
+    m = L.s.mem
+    m[0x249C:0x24AC] = bytes(16)
+    m[0x258F:0x259F] = bytes(16)
+    for k in keys:
+        m[0x249C + k // 8] |= 1 << (k & 7)
+    m[0x59] = 0x08
+    m[0x0B] = 0
+    L.call(0xA1F7)                                   # record start: the held LOWER keys = the first chord
+    for kind, v in steps:
+        if kind == 'd':
+            m[0x79] = 0
+            L.call(0xA1CA, a=v)                      # a delta (ticks)
+        else:
+            L.call(0xA245, a=v >> 8, b=v & 0xFF)    # a chord event (note, velocity), 0000 = no chord
+    if end:
+        L.call(0xA1E2, x=L.ptr(0x7A))                # end mark
+
+
+STEPS = [('d', 5), ('e', 0x3C7F), ('d', 12), ('e', 0x407F), ('e', 0x437F), ('d', 0x7F), ('d', 10), ('e', 0x0000),
+         ('d', 30)]
+
+
+def rec_play(L):
+    rec_script(L, [48, 52, 55], STEPS)
+    L.rec = L.buf()
+    L.after_rec = L.state()
+    m = L.s.mem
+    m[0x0B] = 0
+    L.call(0xA3A7)                                   # play from the top
+    m[0x24] = 1
+    ticks = []
+    for _ in range(400):
+        L.call(0xA165)                               # one 24 PPQN tick while the loop plays
+        ticks.append((m[0x79], len(L.log)))
+    L.ticks = ticks
+
+
+st, pt = both(rec_play)
+check(st.rec == pt.rec, 'chord loop: recorded bytes match stock\n stock %s\n new   %s' % (st.rec[:48].hex(), pt.rec[:48].hex()))
+check(st.rec[:6] == bytes([48, 0x7F, 52, 0x7F, 55, 0xFF]) and st.rec[6] == 5,
+      'chord loop: stock recording = held chord, then the deltas: %s' % st.rec[:40].hex())
+check(st.after_rec == pt.after_rec, 'chord loop: registers + pointers after recording match stock')
+check(st.ticks == pt.ticks and st.state() == pt.state(), 'chord loop: 400 playback ticks match stock')
+check(sum(1 for e in st.log if e[0] == 'chord') > 10 and ('mapclr',) in st.log, 'chord loop: playback wrapped round more than once')
+m = pt.s.mem
+tmp = S['TMP'] - 0x2DA6
+now = bytes(m[0x2DA6:0x30AD])
+check(now[:tmp] == pt.ram0[:tmp] and now[tmp + 1:] == pt.ram0[tmp + 1:], 'chord loop: Rosetta RAM $2DA6-$30AC untouched (TMP aside)')
+check(pt.r.p3[0x1FFE:] == b'LP', 'chord loop: page 3 boot mark kept')
+
+
+def trim(L, t26, t24, t7e, steps):
+    rec_script(L, [50], steps, end=False)
+    m = L.s.mem
+    m[0x26], m[0x24], m[0x7E] = t26, t24, t7e
+    m[0x59] = 0x08
+    m[0x79] = 0
+    L.call(0xA29B)                                   # stop recording at the bar line: trim to whole bars
+    L.rec = L.buf()
+    L.after = L.state()
+
+
+cases = 0
+for t26, t24, t7e, steps in ((48, 48, 3, [('d', 30), ('e', 0x3C7F), ('d', 40), ('e', 0x3E7F), ('d', 50), ('e', 0x4060), ('d', 20)]),
+                             (96, 90, 2, [('d', 0x7F), ('d', 10), ('e', 0x3C7F), ('d', 20)]),
+                             (48, 30, 2, [('d', 40), ('e', 0x3C7F), ('d', 40)]),
+                             (24, 24, 4, [('d', 24)] * 5),
+                             (48, 48, 1, [('d', 10)])):
+    st, pt = both(lambda L: trim(L, t26, t24, t7e, steps))
+    check(st.rec == pt.rec and st.after == pt.after,
+          'chord loop trim %d/%d/%d matches stock\n stock %s\n new   %s' % (t26, t24, t7e, st.rec[:32].hex(), pt.rec[:32].hex()))
+    cases += 1
+check(cases == 5, 'chord loop: 5 trim cases')
+
+
+def fixz(L):                                         # the trim's "delta == overshoot" branch, called directly
+    rec_script(L, [50], [('d', 7), ('e', 0x3C7F), ('d', 9)], end=False)
+    m = L.s.mem
+    m[0x59] = 0x08
+    m[0xAA] = 9
+    L.call(0xA2E7, x=5)                              # X at the 9: 9 - 9 = 0 -> clear "delta follows" on the byte before
+    L.rec = L.buf()
+    L.after = L.state()
+
+
+st, pt = both(fixz)
+check(st.rec == pt.rec and st.after == pt.after and st.rec[4] == 0x7F and st.rec[5] == 0xFE,
+      'chord loop trim: zero-delta branch matches stock: %s / %s' % (st.rec[:12].hex(), pt.rec[:12].hex()))
 print('ALL OK, %d checks' % len(OK))
