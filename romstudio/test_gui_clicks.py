@@ -113,13 +113,22 @@ for k in (2, 3):                                  # LONG2 stored these two at qu
     combo.setCurrentIndex(combo.findData(4))
 check('rate combos -> quarter', [s['rate'] for s in w.samples] == [0, 0, 4, 4])
 last = build()
-her = {'IC7': 'f35c2c2a', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}   # IC7 = OS v0.15 (chord loop fix); she still has v0.14 6a107e72 until it is burned
+her = {'IC7': '6a107e72', 'IC4': '641ba5b8', 'IC28': '4be7339e', 'IC13': 'ddef6264'}   # stable OS v0.14
+check('OS version defaults to the stable v0.14', w.os_ver == 'v0.14' and w.os_combo.currentData() == 'v0.14')
 for chip, want in her.items():
     check(f'{chip} == the chip in her ({want})', chip in last and last[chip][1].startswith(want))
 check('IC37 + IC38 built', 'IC37' in last and 'IC38' in last)
 check('Stored column filled', w.s_tree.topLevelItem(0).text(6).startswith('4.10 s slot, half'))
 check('preview decoded', os.path.exists(os.path.join(tmp, 'samples', 'preview.wav')))
 check('all 6 burn buttons enabled', all(b.isEnabled() for b in w.b_burn.values()))
+# ---- 4. the beta OS: v0.15 (chord loop fix) changes IC7 only ----
+w.tabs.setCurrentIndex(3)
+w.os_combo.setCurrentIndex(w.os_combo.findData('v0.15b'))
+check('beta picked, orange note', w.os_ver == 'v0.15b' and 'BETA' in w.os_note.text() and w.os_note.objectName() == 'warn')
+beta = build()
+check('beta IC7 == v0.15 (f35c2c2a)', beta.get('IC7', ('', ''))[1].startswith('f35c2c2a'))
+check('beta: IC4 / IC28 / IC13 same as stable', all(beta[c][1] == last[c][1] for c in ('IC4', 'IC28', 'IC13')))
+w.os_combo.setCurrentIndex(w.os_combo.findData('v0.14'))
 w.resize(1320, 820)
 for idx, name in ((3, 'screenshot_firmware.png'), (2, 'screenshot_samples.png'), (0, 'screenshot.png')):
     w.tabs.setCurrentIndex(idx)

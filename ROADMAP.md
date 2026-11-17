@@ -16,7 +16,8 @@ firmware chips in her byte for byte.
    - DONE v0.14: **ARPEGGIATOR** (SYNTH EDIT page 20: UP / DOWN / UPDOWN / RANDOM, 1-3 octaves, 1/4-1/32, LATCH; SOLO notes
      via $42CB, the 24 PPQN arranger tick via $A118). Next: the PATCH buttons ->
      own patch menu (a stray PATCH press overwrites the SOLO tone) and the BANK / NUMBER tone buttons -> SYNTH EDIT pages.
-   - FIX v0.15 (built + simulator-tested, not on hw yet): **recording a CHORD LOOP reset her** in v0.4-v0.14. The stock
+   - FIX v0.15 BETA (built + simulator-tested, not on hw yet; the Studio keeps v0.14 as the default OS, sources in
+     re/os_v014, until v0.15 is proven on her): **recording a CHORD LOOP reset her** in v0.4-v0.14. The stock
      loop buffer is page 0 $2DA5-$30A2, the same RAM as the Rosetta trampoline / hooks / variables. The loop now lives
      in SRAM page 3 $3000-$3FEF (free since the composer is gone, 4 KB instead of 765 bytes); its 10 buffer accesses
      go through the LIO hook. A differential test runs her stock loop code next to the patched one (record, 400 ticks

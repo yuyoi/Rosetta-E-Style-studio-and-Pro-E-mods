@@ -64,7 +64,7 @@ QMenuBar, QMenu {{ background: {PANEL}; color: {TXT}; }}
 QMenu::item:selected {{ background: {BLUE}; color: {BG}; }}
 """
 RATE_CHOICES = [('auto', 0), ('full 32 kHz', 1), ('half 16 kHz', 2), ('quarter 8 kHz', 4)]
-FW_OPTS = (('os', 'Rosetta OS v0.14  (IC7 + IC4)',
+FW_OPTS = (('os', 'Rosetta OS  (IC7 + IC4)',
             'SYNTH EDIT, JUNO mode, ARPEGGIATOR, ROSETTA FX pages, USER PROGRAM tones, bender CUTOFF/RESO, MIDI remote. '
             'Needs the pin-31 mod (docs/PIN31_MOD.md).'),
            ('ck34', 'CK-34 v8.1  (IC28)',
@@ -198,6 +198,7 @@ class Studio(QMainWindow):
         self.samples = []                   # [{'wav', 'host', 'rate', 'root'}]
         self.sampler = None                 # proe_samples.Sampler, made on first use (loads the wave ROMs)
         self.fw_on = {'os': True, 'ck34': True, 'fx': True}
+        self.os_ver = fw.OS_DEFAULT         # stable unless the beta is picked on the FIRMWARE tab
         self.long_mode = True
         self.out_dir = BUILD_DIR
         self.setStyleSheet(STYLE)
@@ -420,6 +421,20 @@ class Studio(QMainWindow):
             l.setContentsMargins(26, 0, 0, 4)
             v.addWidget(l)
             self.fw_checks[key] = c
+            if key == 'os':                 # stable release or the beta
+                row = QHBoxLayout()
+                row.setContentsMargins(26, 0, 0, 4)
+                row.addWidget(QLabel('VERSION'))
+                self.os_combo = QComboBox()
+                for k, (label, _) in fw.OS_VERSIONS.items():
+                    self.os_combo.addItem(label, k)
+                self.os_combo.setCurrentIndex(self.os_combo.findData(self.os_ver))
+                self.os_combo.currentIndexChanged.connect(self.on_os_ver)
+                row.addWidget(self.os_combo)
+                self.os_note = dim('')
+                row.addWidget(self.os_note, 1)
+                v.addLayout(row)
+                self.on_os_ver()
         self.fw_room = QLabel()
         self.fw_room.setObjectName('warn')
         self.fw_room.setWordWrap(True)
@@ -686,6 +701,13 @@ class Studio(QMainWindow):
         self.refresh()
         self.refresh_fw()
 
+    def on_os_ver(self, *_):
+        self.os_ver = self.os_combo.currentData()
+        self.os_note.setText(fw.OS_NOTES[self.os_ver])
+        self.os_note.setObjectName('warn' if self.os_ver != fw.OS_DEFAULT else 'dim')   # beta = orange
+        self.os_note.style().unpolish(self.os_note)
+        self.os_note.style().polish(self.os_note)
+
     def on_make_room(self):
         for slot, src in ((17, 9), (19, 8), (20, 10)):
             if slot in self.p.synth_blockers():
@@ -711,7 +733,7 @@ class Studio(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, 'Save project', pr.ROOT, 'PRO-E project (*.proe.json)')
         if path:
             d = self.p.to_dict(self.card_paths)
-            d.update(format=FORMAT, firmware=self.fw_on, long_mode=self.long_mode,
+            d.update(format=FORMAT, firmware=self.fw_on, os_version=self.os_ver, long_mode=self.long_mode,
                      samples=[{k: s[k] for k in ('wav', 'host', 'rate', 'root')} for s in self.samples])
             json.dump(d, open(path, 'w', encoding='utf-8'), indent=1)
             self.log(f'saved {path}')
@@ -731,6 +753,8 @@ class Studio(QMainWindow):
         for k, on in d.get('firmware', {}).items():
             if k in self.fw_checks:
                 self.fw_checks[k].setChecked(on)
+        i = self.os_combo.findData(d.get('os_version', fw.OS_DEFAULT))
+        self.os_combo.setCurrentIndex(i if i >= 0 else self.os_combo.findData(fw.OS_DEFAULT))
         self.c_long.setChecked(d.get('long_mode', True))
         self.samples = []
         if d.get('samples') and self._need_sampler():
@@ -768,13 +792,13 @@ class Studio(QMainWindow):
         # Rosetta OS on: the version screen is the OS's, the banner too unless you changed it
         banner = None if self.p.banner == pr.Project().banner else pr.fit16(self.p.banner[0]) + pr.fit16(self.p.banner[1])
         version = None
-        out, long_mode, sampler = self.out_dir, self.long_mode, self.sampler
+        out, long_mode, sampler, os_ver = self.out_dir, self.long_mode, self.sampler, self.os_ver
 
         def job(log):
             sfiles, key = None, []
             if samples:
                 sfiles, key, _ = sampler.build(samples, os.path.join(out, 'samples'), long_mode, log)
-            files = fw.build(self.p, out, opts['os'], opts['ck34'], opts['fx'], sfiles, banner, version, log)
+            files = fw.build(self.p, out, opts['os'], opts['ck34'], opts['fx'], sfiles, banner, version, log, os_ver)
             return files, key
 
         def after(res):

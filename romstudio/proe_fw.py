@@ -35,7 +35,29 @@ CHIPS = {
     'IC37': ('W27C040', 0xDA86, 'wave ROM, lower 512 KB'),
     'IC38': ('W27C040', 0xDA86, 'wave ROM, upper 512 KB'),
 }
-VERSIONS = {'os': 'Rosetta OS v0.15', 'ck34': 'CK-34 v8.1', 'fx': 'ROSETTA FX v8.2c'}
+VERSIONS = {'os': 'Rosetta OS v0.14', 'ck34': 'CK-34 v8.1', 'fx': 'ROSETTA FX v8.2c'}
+# Rosetta OS releases: key -> (label, build script). The stable one is tested on hardware; a beta is not yet.
+OS_VERSIONS = {
+    'v0.14': ('Rosetta OS v0.14', os.path.join(RE, 'os_v014', 'build_v07.py')),
+    'v0.15b': ('Rosetta OS v0.15 BETA', os.path.join(RE, 'build_v07.py')),
+}
+OS_DEFAULT = 'v0.14'
+OS_NOTES = {
+    'v0.14': 'stable, tested on hardware. Known bug: recording a CHORD LOOP resets her.',
+    'v0.15b': 'BETA, not tested on hardware yet: fixes the CHORD LOOP reset (the loop moves to SRAM page 3).',
+}
+
+
+def os_module(key):
+    """load one OS release's build script under its own module name (both are called build_v07.py)"""
+    import importlib.util
+    name = 'proe_os_' + key.replace('.', '_')
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, OS_VERSIONS[key][1])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
 
 
 def sha1(path):
@@ -78,8 +100,10 @@ def _quiet(log):
             log('    ' + line)
 
 
-def build(project, out, os_on=True, ck34_on=True, fx_on=True, samples=None, banner=None, version=None, log=print):
-    """-> {chip: (path, md5)} for every chip this build changes. samples = proe_samples files {IC37, IC38, IC28} or None."""
+def build(project, out, os_on=True, ck34_on=True, fx_on=True, samples=None, banner=None, version=None, log=print,
+          os_ver=OS_DEFAULT):
+    """-> {chip: (path, md5)} for every chip this build changes. samples = proe_samples files {IC37, IC38, IC28} or None.
+    os_ver = a key of OS_VERSIONS (stable v0.14 unless you pick the beta)."""
     os.makedirs(out, exist_ok=True)
     imgs = {}
     project.reserve = os_on
@@ -87,15 +111,14 @@ def build(project, out, os_on=True, ck34_on=True, fx_on=True, samples=None, bann
     for r in rep:
         log('  ' + r)
     if os_on:
-        import build_v07 as B7
         with tempfile.TemporaryDirectory() as t:
             p7, p4 = os.path.join(t, 'ic7.bin'), os.path.join(t, 'ic4.bin')
             open(p7, 'wb').write(ic7)
             open(p4, 'wb').write(ic4)
             with _quiet(lambda s: None):
-                img7, img4, *_ = B7.build(p7, p4, banner, version)
+                img7, img4, *_ = os_module(os_ver).build(p7, p4, banner, version)
         imgs['IC7'], imgs['IC4'] = img7, img4
-        log('  IC7 + IC4: %s on top of the styles' % VERSIONS['os'])
+        log('  IC7 + IC4: %s on top of the styles' % OS_VERSIONS[os_ver][0])
     else:
         imgs['IC7'], imgs['IC4'] = ic7 * 2, ic4 * 4
     base28 = samples['IC28'] if samples else os.path.join(DUMPS, STOCK['IC28'][0])

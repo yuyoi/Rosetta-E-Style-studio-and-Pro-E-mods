@@ -69,8 +69,10 @@ The internal-slot mods (IC7/IC4) are PRO-E specific. The E-20/E-10 share the PRO
    card dump goes in `dumps_ext/`.
 3. `romstudio/run_romstudio.bat` opens **Rosetta OS // PRO-E Studio**.
 4. **FIRMWARE:** *Import ROM dumps* (pick your files: the Studio checks each one by SHA-1 and files the PRO-E v2.00 chips
-   in `dumps/`). Tick what to patch: **Rosetta OS v0.13** (IC7 + IC4, needs the [pin-31 mod](docs/PIN31_MOD.md)),
+   in `dumps/`). Tick what to patch: **Rosetta OS** (IC7 + IC4, needs the [pin-31 mod](docs/PIN31_MOD.md)),
    **CK-34 v8.1** (IC28), **ROSETTA FX v8.2c** (IC13).
+   OS VERSION: **v0.14** is the stable one (tested on hardware; known bug: recording a CHORD LOOP resets her).
+   **v0.15 BETA** fixes that (the loop moves to SRAM page 3), but it hasn't been tested on hardware yet.
    The OS needs room in style bank 5: stock BIG BAND, COUNTRY and WALTZ1 live there. Put other styles in those slots
    (MSL-15, your MIDI) or click *Make room for the OS*.
 5. **STYLES:** click a slot, double-click a style in the library. Rename it, set the tempo, or Restore stock.
